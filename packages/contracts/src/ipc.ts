@@ -28,6 +28,8 @@ export interface ContextMenuItem<T extends string = string> {
   disabled?: boolean;
   header?: boolean;
   icon?: string;
+  /** CSS color for the icon; the web fallback menu draws it, native menus ignore it. */
+  iconColor?: string;
   separatorBefore?: boolean;
   checked?: boolean;
   children?: readonly ContextMenuItem<T>[];

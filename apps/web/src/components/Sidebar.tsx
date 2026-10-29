@@ -44,6 +44,7 @@ import { foldSearchQuery, rankMessageMatches } from "@t3tools/shared/paletteSear
 import { findForMessageMatch, openThreadFindOnQuery } from "./chat/threadFindStore";
 import {
   threadRuntimeCanArchive,
+  type EnvironmentProject,
   type EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/models";
 import {
@@ -264,9 +265,13 @@ import {
   type SidebarThreadGroupView,
 } from "./sidebar/SidebarThreadGroupHeader";
 import { requestThreadGroupName } from "./ThreadGroupNameDialog";
+import { requestThreadGroupSettings } from "./ThreadGroupSettingsDialog";
+import { THREAD_GROUP_COLOR_STYLES } from "./sidebar/ThreadGroupIcon";
 import {
   resolveThreadGroup,
   splitThreadsByGroup,
+  type ThreadGroup,
+  type ThreadGroupLocation,
   type ThreadGroupSection,
   type ThreadGroupsByProjectKey,
 } from "../threadGroups";
@@ -419,7 +424,32 @@ function toThreadGroupViews(
   });
 }
 
+type ProjectByKey = ReadonlyMap<string, EnvironmentProject>;
+
+function repositoryKeysOf(project: EnvironmentProject | undefined): string[] {
+  const identity = project?.repositoryIdentity;
+  if (!identity) return [];
+  const slug = identity.owner && identity.name ? `${identity.owner}/${identity.name}` : null;
+  return [identity.canonicalKey, identity.origin?.canonicalKey ?? null, slug].filter(
+    (key): key is string => key !== null,
+  );
+}
+
+function threadGroupLocationOf(
+  thread: EnvironmentThreadShell,
+  projectByKey: ProjectByKey,
+): ThreadGroupLocation {
+  const project = projectByKey.get(`${thread.environmentId}:${thread.projectId}`);
+  const projectRoot = project?.workspaceRoot ?? null;
+  return {
+    projectRoot,
+    threadDir: thread.worktreePath ?? projectRoot,
+    repoKeys: repositoryKeysOf(project),
+  };
+}
+
 function splitSidebarThreadGroups(input: {
+  readonly projectByKey: ProjectByKey;
   readonly threads: readonly EnvironmentThreadShell[];
   readonly projectKeys: readonly string[];
   readonly state: ThreadGroupsByProjectKey;
@@ -433,6 +463,7 @@ function splitSidebarThreadGroups(input: {
     state: input.state,
     projectKeyOf: (thread) => `${thread.environmentId}:${thread.projectId}`,
     threadKeyOf: threadShellKey,
+    locationOf: (thread) => threadGroupLocationOf(thread, input.projectByKey),
     keepEmpty: input.keepEmpty,
   });
   return {
@@ -462,11 +493,22 @@ async function applyThreadGroupAction(action: string, projectKey: string, thread
   store.setThreadGroupMembership(projectKey, threadKey, id);
 }
 
-function threadGroupMenuState(projectKey: string, threadKey: string) {
+const MUTED_ICON_COLOR = "var(--muted-foreground)";
+
+function threadGroupMenuState(
+  projectKey: string,
+  threadKey: string,
+  location: ThreadGroupLocation,
+) {
   const groups = useUiStateStore.getState().threadGroupsByProjectKey;
   return {
-    options: groups[projectKey]?.groups ?? [],
-    currentGroupId: resolveThreadGroup(groups, projectKey, threadKey)?.id ?? null,
+    options: (groups[projectKey]?.groups ?? []).map((group) => ({
+      id: group.id,
+      name: group.name,
+      icon: group.icon ?? "folder",
+      iconColor: group.color ? THREAD_GROUP_COLOR_STYLES[group.color].css : MUTED_ICON_COLOR,
+    })),
+    currentGroupId: resolveThreadGroup(groups, projectKey, threadKey, location)?.id ?? null,
   };
 }
 
@@ -481,6 +523,7 @@ function routeThreadOnly(
 
 // Separate hooks cache maps independently of later Sidebar hooks and preserve dnd-kit inputs.
 function useSidebarThreads(input: {
+  readonly projectByKey: ProjectByKey;
   readonly projectScopeKey: string | null;
   readonly scopedProjectKeys: ReadonlySet<string> | null;
   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
@@ -503,6 +546,7 @@ function useSidebarThreads(input: {
     routeRowThreadKey,
     folderGroups,
     keepEmptyFolders: keepEmpty,
+    projectByKey,
   } = input;
   // Folders already separate the work, so boring mode has no Working shelf.
   const workingShelfEnabled =
@@ -598,6 +642,7 @@ function useSidebarThreads(input: {
             sidebarFolderExpansionKeys(folder.group),
           );
           const split = splitSidebarThreadGroups({
+            projectByKey,
             threads: folder.threads,
             projectKeys: folder.group.memberProjectRefs.map(
               (ref) => `${ref.environmentId}:${ref.projectId}`,
@@ -624,6 +669,7 @@ function useSidebarThreads(input: {
   const activeGroupSplit =
     folderGroups === null
       ? splitSidebarThreadGroups({
+          projectByKey,
           threads: activeThreads,
           projectKeys: Object.keys(threadGroupsByProjectKey),
           state: threadGroupsByProjectKey,
@@ -701,6 +747,18 @@ function useSidebarThreads(input: {
     ),
     activeKeysById: new Map(
       threads.map((thread) => [threadShellKey(thread), thread.activeOrderKey ?? null] as const),
+    ),
+    // Grouped threads keep their badge on every shelf, so this covers all threads.
+    groupByThreadKey: new Map<string, ThreadGroup | null>(
+      threads.map((thread) => [
+        threadShellKey(thread),
+        resolveThreadGroup(
+          threadGroupsByProjectKey,
+          `${thread.environmentId}:${thread.projectId}`,
+          threadShellKey(thread),
+          threadGroupLocationOf(thread, projectByKey),
+        ),
+      ]),
     ),
   };
 }
@@ -1330,6 +1388,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           api.contextMenu.show(
             [
               { id: "rename-group", label: "Rename group", icon: "pencil" },
+              { id: "group-settings", label: "Group settings…", icon: "settings" },
               { id: "delete-group", label: "Delete group", icon: "trash", destructive: true },
             ],
             position,
@@ -1339,6 +1398,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         const store = useUiStateStore.getState();
         if (clicked.value === "delete-group") {
           store.deleteThreadGroup(view.projectKey, view.group.id);
+          return;
+        }
+        if (clicked.value === "group-settings") {
+          const settings = await requestThreadGroupSettings(view.group);
+          if (settings) store.updateThreadGroupSettings(view.projectKey, view.group.id, settings);
           return;
         }
         if (clicked.value !== "rename-group") return;
@@ -1421,7 +1485,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     activeKeys,
     pinnedKeysById,
     activeKeysById,
+    groupByThreadKey,
   } = useSidebarThreads({
+    projectByKey,
     projectScopeKey,
     scopedProjectKeys,
     serverConfigs,
@@ -2747,7 +2813,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 titleRegeneration: configLoaded,
               },
               snoozePresets,
-              groups: threadGroupMenuState(threadProjectKey, threadKey),
+              groups: threadGroupMenuState(
+                threadProjectKey,
+                threadKey,
+                threadGroupLocationOf(thread, projectByKey),
+              ),
             }),
             position,
           ),
@@ -3397,6 +3467,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             thread={thread}
                             variant={rowVariant}
                             nested={folderRow !== undefined && groupRow !== undefined}
+                            group={groupByThreadKey.get(threadKey) ?? null}
                             navigationParent={
                               groupRow ??
                               folderRow ??

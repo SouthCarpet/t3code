@@ -9,6 +9,62 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     { tag: "path", attrs: { d: "M10 12h4" } },
   ],
   check: [{ tag: "path", attrs: { d: "M20 6 9 17l-5-5" } }],
+  "shopping-bag": [
+    { tag: "path", attrs: { d: "M16 10a4 4 0 0 1-8 0" } },
+    { tag: "path", attrs: { d: "M3.103 6.034h17.794" } },
+    {
+      tag: "path",
+      attrs: {
+        d: "M3.4 5.467a2 2 0 0 0-.4 1.2V20a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6.667a2 2 0 0 0-.4-1.2l-2-2.667A2 2 0 0 0 17 2H7a2 2 0 0 0-1.6.8z",
+      },
+    },
+  ],
+  bot: [
+    { tag: "path", attrs: { d: "M12 8V4H8" } },
+    { tag: "rect", attrs: { width: "16", height: "12", x: "4", y: "8", rx: "2" } },
+    { tag: "path", attrs: { d: "M2 14h2" } },
+    { tag: "path", attrs: { d: "M20 14h2" } },
+    { tag: "path", attrs: { d: "M15 13v2" } },
+    { tag: "path", attrs: { d: "M9 13v2" } },
+  ],
+  rocket: [
+    {
+      tag: "path",
+      attrs: {
+        d: "M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z",
+      },
+    },
+    {
+      tag: "path",
+      attrs: {
+        d: "m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z",
+      },
+    },
+    { tag: "path", attrs: { d: "M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" } },
+    { tag: "path", attrs: { d: "M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" } },
+  ],
+  bug: [
+    { tag: "path", attrs: { d: "M12 20v-9" } },
+    { tag: "path", attrs: { d: "M14 7a4 4 0 0 1 4 4v3a6 6 0 0 1-12 0v-3a4 4 0 0 1 4-4z" } },
+    { tag: "path", attrs: { d: "M14.12 3.88 16 2" } },
+    { tag: "path", attrs: { d: "M21 21a4 4 0 0 0-3.81-4" } },
+    { tag: "path", attrs: { d: "M21 5a4 4 0 0 1-3.55 3.97" } },
+    { tag: "path", attrs: { d: "M22 13h-4" } },
+    { tag: "path", attrs: { d: "M3 21a4 4 0 0 1 3.81-4" } },
+    { tag: "path", attrs: { d: "M3 5a4 4 0 0 0 3.55 3.97" } },
+    { tag: "path", attrs: { d: "M6 13H2" } },
+    { tag: "path", attrs: { d: "m8 2 1.88 1.88" } },
+    { tag: "path", attrs: { d: "M9 7.13V6a3 3 0 1 1 6 0v1.13" } },
+  ],
+  "book-open": [
+    { tag: "path", attrs: { d: "M12 7v14" } },
+    {
+      tag: "path",
+      attrs: {
+        d: "M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z",
+      },
+    },
+  ],
   timer: [
     { tag: "line", attrs: { x1: "10", x2: "14", y1: "2", y2: "2" } },
     { tag: "line", attrs: { x1: "12", x2: "15", y1: "14", y2: "11" } },
@@ -165,6 +221,36 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     { tag: "line", attrs: { x1: "14", x2: "14", y1: "11", y2: "17" } },
   ],
 };
+
+function appendCheckOrSpacer(button: HTMLElement, checked: boolean) {
+  const check = checked ? createIconElement("check", "neutral") : null;
+  if (check) {
+    button.appendChild(check);
+    return;
+  }
+  const spacer = document.createElement("span");
+  spacer.className = "size-4.5 shrink-0 sm:size-4";
+  spacer.style.cssText = "display:inline-block;width:1rem;height:1rem;flex-shrink:0;";
+  spacer.setAttribute("aria-hidden", "true");
+  button.appendChild(spacer);
+}
+
+function appendLeadingSlot(button: HTMLElement, item: ContextMenuItem, destructive: boolean) {
+  const checkable = typeof item.checked === "boolean";
+  if (checkable) {
+    button.setAttribute("role", "menuitemradio");
+    button.setAttribute("aria-checked", item.checked ? "true" : "false");
+  }
+  if (checkable && !item.iconColor) {
+    appendCheckOrSpacer(button, item.checked === true);
+    return;
+  }
+  if (typeof item.icon !== "string") return;
+  const icon = createIconElement(item.icon, destructive ? "destructive" : "neutral");
+  if (!icon) return;
+  if (item.iconColor) icon.style.color = item.iconColor;
+  button.appendChild(icon);
+}
 
 function createIconElement(name: string, tone: "neutral" | "destructive"): SVGSVGElement | null {
   const paths = ICON_PATHS[name];
@@ -449,30 +535,14 @@ export function showContextMenuFallback<T extends string>(
           button.style.pointerEvents = "none";
         }
 
-        if (typeof item.checked === "boolean") {
-          button.setAttribute("role", "menuitemradio");
-          button.setAttribute("aria-checked", item.checked ? "true" : "false");
-          const check = item.checked ? createIconElement("check", "neutral") : null;
-          if (check) {
-            button.appendChild(check);
-          } else {
-            const spacer = document.createElement("span");
-            spacer.className = "size-4.5 shrink-0 sm:size-4";
-            spacer.style.cssText = "display:inline-block;width:1rem;height:1rem;flex-shrink:0;";
-            spacer.setAttribute("aria-hidden", "true");
-            button.appendChild(spacer);
-          }
-        } else if (typeof item.icon === "string") {
-          const icon = createIconElement(item.icon, isLeafDestructive ? "destructive" : "neutral");
-          if (icon) {
-            button.appendChild(icon);
-          }
-        }
+        appendLeadingSlot(button, item, isLeafDestructive);
 
         const label = document.createElement("span");
         label.className = "min-w-0 flex-1 truncate";
         label.textContent = item.label;
         button.appendChild(label);
+        // A colored icon takes the leading slot, so its checked state shows at the end.
+        if (item.iconColor && item.checked) appendCheckOrSpacer(button, true);
 
         if (hasChildren) {
           button.setAttribute("aria-haspopup", "menu");

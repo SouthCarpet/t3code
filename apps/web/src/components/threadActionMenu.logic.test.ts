@@ -81,17 +81,20 @@ describe("buildThreadActionMenuItems", () => {
   ] as const)("places group items after the lifecycle items (current %s)", (current, ids) => {
     const items = buildThreadActionMenuItems({
       ...baseState,
-      groups: { options: [{ id: "a", name: "Alpha" }], currentGroupId: current },
+      groups: {
+        options: [{ id: "a", name: "Alpha", icon: "shopping-bag", iconColor: "green" }],
+        currentGroupId: current,
+      },
     });
     const start = items.findIndex((item) => item.id === "snooze");
     expect(items.slice(start, start + ids.length).map((item) => item.id)).toEqual(ids);
     expect(
       items
         .find((item) => item.id === "group-add")
-        ?.children?.map((child) => [child.id, child.checked ?? false]),
+        ?.children?.map((child) => [child.id, child.checked ?? false, child.icon, child.iconColor]),
     ).toEqual([
-      ["group-add:a", current === "a"],
-      ["group-new", false],
+      ["group-add:a", current === "a", "shopping-bag", "green"],
+      ["group-new", false, undefined, undefined],
     ]);
   });
 });

@@ -102,6 +102,8 @@ import {
 import { pickSnoozePreset, resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
 import { useThreadShell } from "../../state/entities";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
+import type { ThreadGroup } from "../../threadGroups";
+import { ThreadGroupIcon } from "./ThreadGroupIcon";
 import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
@@ -539,6 +541,8 @@ type SidebarThreadRowProps = {
   navigationParent?: string | undefined;
   /** A folder row inside a thread group, indented one step past the group header. */
   nested?: boolean;
+  /** The thread's group; its icon stands in for the project avatar. */
+  group?: ThreadGroup | null;
   variantAction: SidebarSweepAction;
   settlementSupported: boolean;
   snoozeSupported: boolean;
@@ -1244,11 +1248,26 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       "opacity-40 grayscale group-focus-within/sidebar-row:opacity-100 group-focus-within/sidebar-row:grayscale-0 group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
                   )}
                 >
-                  {props.project ? (
+                  {props.group ? (
+                    <ThreadGroupIcon
+                      icon={props.group.icon}
+                      color={props.group.color}
+                      look="badge"
+                      className="size-4"
+                    />
+                  ) : props.project ? (
                     <ProjectFavicon project={props.project} className="size-4" />
                   ) : null}
                 </span>
               )}
+              {inFolder && props.group ? (
+                <ThreadGroupIcon
+                  icon={props.group.icon}
+                  color={props.group.color}
+                  look="inline"
+                  className="size-3.5"
+                />
+              ) : null}
               {draftIndicator}
               {title}
               {multiline ? titleLineProviderStack : null}
@@ -1423,7 +1442,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           >
             <div className="flex h-5 min-w-0 items-center gap-1.5">
               {draftIndicator}
-              {props.project ? (
+              {props.group ? (
+                <ThreadGroupIcon
+                  icon={props.group.icon}
+                  color={props.group.color}
+                  look="badge"
+                  className="size-4"
+                />
+              ) : props.project ? (
                 <ProjectFavicon project={props.project} className="size-4 shrink-0" />
               ) : null}
               {/* Left of the status slot, the pin would slide when hover swaps the

@@ -101,7 +101,12 @@ export interface ThreadActionMenuState {
   readonly canTurnIntoProject?: boolean;
   /** Client-only groups of the thread's project; omitted where grouping is not offered. */
   readonly groups?: {
-    readonly options: ReadonlyArray<{ readonly id: string; readonly name: string }>;
+    readonly options: ReadonlyArray<{
+      readonly id: string;
+      readonly name: string;
+      readonly icon: string;
+      readonly iconColor?: string;
+    }>;
     readonly currentGroupId: string | null;
   };
 }
@@ -118,6 +123,8 @@ function buildGroupMenuItems(
       ...groups.options.map((group) => ({
         id: `group-add:${group.id}` as const,
         label: group.name,
+        icon: group.icon,
+        ...(group.iconColor ? { iconColor: group.iconColor } : {}),
         checked: group.id === groups.currentGroupId,
       })),
       { id: "group-new", label: "New group…", separatorBefore: groups.options.length > 0 },

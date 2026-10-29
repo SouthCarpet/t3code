@@ -8,7 +8,9 @@ import {
   renameThreadGroup,
   sanitizeThreadGroups,
   setThreadGroupMembership,
+  updateThreadGroupSettings,
   type ThreadGroup,
+  type ThreadGroupSettings,
   type ThreadGroupsByProjectKey,
 } from "./threadGroups";
 
@@ -463,6 +465,11 @@ interface UiStateStore extends UiState {
   createThreadGroup: (projectKey: string, group: ThreadGroup) => void;
   renameThreadGroup: (projectKey: string, groupId: string, name: string) => void;
   deleteThreadGroup: (projectKey: string, groupId: string) => void;
+  updateThreadGroupSettings: (
+    projectKey: string,
+    groupId: string,
+    settings: ThreadGroupSettings & { readonly name: string },
+  ) => void;
   setThreadGroupMembership: (projectKey: string, threadKey: string, groupId: string | null) => void;
   toggleThreadGroupCollapsed: (groupId: string) => void;
 }
@@ -503,6 +510,12 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
   renameThreadGroup: (projectKey, groupId, name) =>
     set((state) =>
       updateThreadGroups(state, (groups) => renameThreadGroup(groups, projectKey, groupId, name)),
+    ),
+  updateThreadGroupSettings: (projectKey, groupId, settings) =>
+    set((state) =>
+      updateThreadGroups(state, (groups) =>
+        updateThreadGroupSettings(groups, projectKey, groupId, settings),
+      ),
     ),
   deleteThreadGroup: (projectKey, groupId) =>
     set((state) =>

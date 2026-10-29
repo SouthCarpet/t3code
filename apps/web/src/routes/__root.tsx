@@ -18,6 +18,7 @@ import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { ThreadGroupNameDialogHost } from "../components/ThreadGroupNameDialog";
+import { ThreadGroupSettingsDialogHost } from "../components/ThreadGroupSettingsDialog";
 import { GuestShareDialogHost } from "../components/chat/GuestShareControls";
 import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachineDialog";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
@@ -170,6 +171,7 @@ function RootRouteBranch() {
       <>
         <CustomSnoozeDialogHost />
         <ThreadGroupNameDialogHost />
+        <ThreadGroupSettingsDialogHost />
         <GuestShareDialogHost />
         <CommandPalette>
           <AppSidebarLayout>
@@ -212,6 +214,7 @@ function RootRouteBranch() {
         <ConfirmDialogHost />
         <CustomSnoozeDialogHost />
         <ThreadGroupNameDialogHost />
+        <ThreadGroupSettingsDialogHost />
         <GuestShareDialogHost />
         <ProjectCloneToastCoordinator />
         <AddProjectToMachineDialogHost />

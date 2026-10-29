@@ -6,6 +6,9 @@ import {
   resolveThreadGroup,
   sanitizeThreadGroups,
   setThreadGroupMembership,
+  isInsideSubfolder,
+  matchesAutoAddRules,
+  updateThreadGroupSettings,
   splitThreadsByGroup,
   type ThreadGroupsByProjectKey,
 } from "./threadGroups";
@@ -104,4 +107,143 @@ it("sanitizeThreadGroups drops malformed groups and memberships of missing group
       "": { groups: [{ id: "z", name: "Z" }] },
     }),
   ).toEqual({ [P]: { groups: [{ id: "a", name: "Alpha" }], membership: { t1: "a" } } });
+});
+
+it("sanitizeThreadGroups keeps valid settings and exclusions and drops unknown ones", () => {
+  expect(
+    sanitizeThreadGroups({
+      [P]: {
+        groups: [
+          {
+            id: "a",
+            name: "Alpha",
+            icon: "shopping-bag",
+            color: "green",
+            autoAddSubfolder: "/apps/x/",
+            autoAddRepo: " Owner/Repo ",
+            autoAddMode: "all",
+          },
+          {
+            id: "b",
+            name: "Beta",
+            icon: "nope",
+            color: 3,
+            autoAddSubfolder: "  ",
+            autoAddMode: "x",
+          },
+        ],
+        membership: {},
+        excluded: { t1: true, t2: "yes" },
+      },
+    }),
+  ).toEqual({
+    [P]: {
+      groups: [
+        {
+          id: "a",
+          name: "Alpha",
+          icon: "shopping-bag",
+          color: "green",
+          autoAddSubfolder: "apps/x",
+          autoAddRepo: "Owner/Repo",
+          autoAddMode: "all",
+        },
+        { id: "b", name: "Beta" },
+      ],
+      membership: {},
+      excluded: { t1: true },
+    },
+  });
+});
+
+describe("group settings and auto-add", () => {
+  const rooted = (state: ThreadGroupsByProjectKey) =>
+    updateThreadGroupSettings(state, P, "a", {
+      name: " Rift ",
+      icon: "shopping-bag",
+      color: "green",
+      autoAddSubfolder: "/apps/rift/",
+    });
+
+  it("updates the settings of one group and refuses blank names and unknown groups", () => {
+    const state = rooted(withGroups());
+    expect(state[P]!.groups[0]).toEqual({
+      id: "a",
+      name: "Rift",
+      icon: "shopping-bag",
+      color: "green",
+      autoAddSubfolder: "apps/rift",
+      autoAddRepo: null,
+      autoAddMode: "any",
+    });
+    expect(updateThreadGroupSettings(state, P, "a", { name: " " })).toBe(state);
+    expect(updateThreadGroupSettings(state, P, "zz", { name: "X" })).toBe(state);
+  });
+
+  it.each([
+    ["C:\\work\\repo\\apps\\rift", "C:/work/repo", "apps/rift", true],
+    ["c:/WORK/repo/apps/rift/sub", "C:\\work\\repo\\", "apps/rift", true],
+    ["C:/work/repo/apps/rifting", "C:/work/repo", "apps/rift", false],
+    ["C:/work/repo", "C:/work/repo", "apps/rift", false],
+    ["/home/u/repo/Apps/rift", "/home/u/repo", "apps/rift", false],
+    ["/home/u/repo/apps/rift", "/home/u/repo", "apps/rift", true],
+  ])("isInsideSubfolder(%s, %s, %s) is %s", (dir, root, folder, expected) => {
+    expect(isInsideSubfolder(dir, root, folder)).toBe(expected);
+  });
+
+  const inSub = { projectRoot: "C:/repo", threadDir: "C:/repo/apps/rift/wt" };
+  const atRoot = { projectRoot: "C:/repo", threadDir: "C:/repo" };
+  const keys = ["github.com/southcarpet/rift-dice"];
+  it.each([
+    ["sub-folder only, inside", { autoAddSubfolder: "apps/rift" }, inSub, true],
+    ["sub-folder only, outside", { autoAddSubfolder: "apps/rift" }, atRoot, false],
+    [
+      "repo slug only",
+      { autoAddRepo: "SouthCarpet/rift-dice" },
+      { ...atRoot, repoKeys: keys },
+      true,
+    ],
+    [
+      "repo slug only, other remote",
+      { autoAddRepo: "other/repo" },
+      { ...atRoot, repoKeys: keys },
+      false,
+    ],
+    ["repo root path only", { autoAddRepo: "apps/rift" }, inSub, true],
+    ["repo absolute root", { autoAddRepo: "c:\\REPO\\apps" }, inSub, true],
+    ["both, any, one matches", { autoAddSubfolder: "apps/rift", autoAddRepo: "x/y" }, inSub, true],
+    [
+      "both, all, one matches",
+      { autoAddSubfolder: "apps/rift", autoAddRepo: "x/y", autoAddMode: "all" as const },
+      inSub,
+      false,
+    ],
+    [
+      "both, all, both match",
+      {
+        autoAddSubfolder: "apps/rift",
+        autoAddRepo: "southcarpet/rift-dice",
+        autoAddMode: "all" as const,
+      },
+      { ...inSub, repoKeys: keys },
+      true,
+    ],
+    ["no rule", { autoAddMode: "all" as const }, inSub, false],
+  ])("matchesAutoAddRules: %s", (_name, group, location, expected) => {
+    expect(matchesAutoAddRules(group, location)).toBe(expected);
+  });
+
+  it("derives membership from the rule, keeps manual membership first, and honours exclusion", () => {
+    const state = rooted(withGroups());
+    expect(resolveThreadGroup(state, P, "t9", inSub)?.id).toBe("a");
+    expect(resolveThreadGroup(state, P, "t9", atRoot)).toBeNull();
+    expect(resolveThreadGroup(state, P, "t2", inSub)?.id).toBe("b");
+    expect(state[P]!.membership).not.toHaveProperty("t9");
+    const removed = setThreadGroupMembership(state, P, "t9", null);
+    expect(removed[P]!.excluded).toEqual({ t9: true });
+    expect(resolveThreadGroup(removed, P, "t9", inSub)).toBeNull();
+    const readded = setThreadGroupMembership(removed, P, "t9", "a");
+    expect(readded[P]!.excluded).toEqual({});
+    expect(resolveThreadGroup(readded, P, "t9", atRoot)?.id).toBe("a");
+  });
 });

@@ -3,7 +3,44 @@
  * (`${environmentId}:${projectId}`): an ordered list of named groups and a map from
  * a scoped thread key to the id of its group.
  */
-export interface ThreadGroup {
+export const THREAD_GROUP_ICONS = [
+  "folder",
+  "shopping-bag",
+  "git-branch",
+  "clock",
+  "bot",
+  "rocket",
+  "bug",
+  "book-open",
+] as const;
+export type ThreadGroupIcon = (typeof THREAD_GROUP_ICONS)[number];
+
+export const THREAD_GROUP_COLORS = [
+  "slate",
+  "red",
+  "amber",
+  "green",
+  "teal",
+  "blue",
+  "violet",
+  "pink",
+] as const;
+export type ThreadGroupColor = (typeof THREAD_GROUP_COLORS)[number];
+
+export interface ThreadGroupSettings {
+  readonly icon?: ThreadGroupIcon | undefined;
+  readonly color?: ThreadGroupColor | undefined;
+  /** Project-relative folder; threads that run inside it join the group. */
+  readonly autoAddSubfolder?: string | null;
+  /** Repository root path (absolute or project-relative) or remote slug `owner/repo`. */
+  readonly autoAddRepo?: string | null;
+  /** How two set rules combine; one set rule ignores it. */
+  readonly autoAddMode?: ThreadGroupAutoAddMode;
+}
+
+export type ThreadGroupAutoAddMode = "any" | "all";
+
+export interface ThreadGroup extends ThreadGroupSettings {
   readonly id: string;
   readonly name: string;
 }
@@ -11,6 +48,8 @@ export interface ThreadGroup {
 export interface ProjectThreadGroups {
   readonly groups: readonly ThreadGroup[];
   readonly membership: Readonly<Record<string, string>>;
+  /** Threads removed by hand; auto-add rules skip them. */
+  readonly excluded?: Readonly<Record<string, true>>;
 }
 
 export type ThreadGroupsByProjectKey = Readonly<Record<string, ProjectThreadGroups>>;
@@ -70,6 +109,7 @@ export function deleteThreadGroup(
   const current = projectGroupsOf(state, projectKey);
   if (!current.groups.some(({ id }) => id === groupId)) return state;
   return withProjectGroups(state, projectKey, {
+    ...current,
     groups: current.groups.filter(({ id }) => id !== groupId),
     membership: Object.fromEntries(
       Object.entries(current.membership).filter(([, memberOf]) => memberOf !== groupId),
@@ -85,24 +125,169 @@ export function setThreadGroupMembership(
   groupId: string | null,
 ): ThreadGroupsByProjectKey {
   const current = projectGroupsOf(state, projectKey);
-  if ((current.membership[threadKey] ?? null) === groupId) return state;
+  const unchanged =
+    (current.membership[threadKey] ?? null) === groupId &&
+    (groupId !== null || current.excluded?.[threadKey] === true);
+  if (unchanged) return state;
   if (groupId !== null && !current.groups.some(({ id }) => id === groupId)) return state;
   const { [threadKey]: _previous, ...rest } = current.membership;
+  const { [threadKey]: _excluded, ...stillExcluded } = current.excluded ?? {};
   return withProjectGroups(state, projectKey, {
     ...current,
     membership: groupId === null ? rest : { ...rest, [threadKey]: groupId },
+    excluded: groupId === null ? { ...stillExcluded, [threadKey]: true } : stillExcluded,
   });
 }
 
-/** The group that holds the thread, if the group still exists. */
+function trimmedRule(value: string | null | undefined): string {
+  return (value ?? "").trim().replaceAll("\\", "/").replace(/\/+$/, "");
+}
+
+/** A blank folder clears the rule; slashes are trimmed and unified. */
+function normalizeSubfolder(value: string | null | undefined): string | null {
+  const folder = trimmedRule(value).replace(/^\/+/, "");
+  return folder.length > 0 ? folder : null;
+}
+
+/** A repository is a root path (absolute or project-relative) or a remote slug. */
+function normalizeRepo(value: string | null | undefined): string | null {
+  const repo = trimmedRule(value);
+  return repo.length > 0 ? repo : null;
+}
+
+/** Short text for the group header: the sub-folder, the repository, or both. */
+export function threadGroupAutoAddHint(group: ThreadGroupSettings): string | null {
+  const { autoAddSubfolder: folder, autoAddRepo: repo } = group;
+  if (folder && repo) return `${folder} + repo`;
+  return folder || repo || null;
+}
+
+export function updateThreadGroupSettings(
+  state: ThreadGroupsByProjectKey,
+  projectKey: string,
+  groupId: string,
+  settings: ThreadGroupSettings & { readonly name: string },
+): ThreadGroupsByProjectKey {
+  const current = projectGroupsOf(state, projectKey);
+  const name = settings.name.trim();
+  if (name.length === 0 || !current.groups.some(({ id }) => id === groupId)) return state;
+  const next: ThreadGroup = {
+    id: groupId,
+    name,
+    ...(settings.icon ? { icon: settings.icon } : {}),
+    ...(settings.color ? { color: settings.color } : {}),
+    autoAddSubfolder: normalizeSubfolder(settings.autoAddSubfolder),
+    autoAddRepo: normalizeRepo(settings.autoAddRepo),
+    autoAddMode: settings.autoAddMode === "all" ? "all" : "any",
+  };
+  return withProjectGroups(state, projectKey, {
+    ...current,
+    groups: current.groups.map((group) => (group.id === groupId ? next : group)),
+  });
+}
+
+function comparablePath(path: string): string {
+  const unified = path
+    .replaceAll("\\", "/")
+    .replace(/(?<!^)\/+/g, "/")
+    .replace(/\/+$/, "");
+  // Drive-letter and UNC paths are Windows paths, which compare without case.
+  return /^([a-z]:|\/\/)/i.test(unified) ? unified.toLowerCase() : unified;
+}
+
+function isAbsolutePath(path: string): boolean {
+  return /^([a-z]:)?[\\/]/i.test(path);
+}
+
+/** True when `dir` is `folder` or a folder below it. */
+function isInsideFolder(dir: string, folder: string): boolean {
+  const base = comparablePath(folder);
+  const candidate = comparablePath(dir);
+  return candidate === base || candidate.startsWith(`${base}/`);
+}
+
+/** True when `threadDir` is `<projectRoot>/<subfolder>` or a folder below it. */
+export function isInsideSubfolder(
+  threadDir: string,
+  projectRoot: string,
+  subfolder: string,
+): boolean {
+  return isInsideFolder(threadDir, `${projectRoot}/${subfolder}`);
+}
+
+/**
+ * Where a thread runs: its worktree, or the project root when it has none, plus the
+ * repository keys of its project (canonical keys such as `github.com/owner/repo`).
+ */
+export interface ThreadGroupLocation {
+  readonly projectRoot: string | null;
+  readonly threadDir: string | null;
+  readonly repoKeys?: readonly string[];
+}
+
+function matchesSubfolderRule(subfolder: string, location: ThreadGroupLocation): boolean {
+  const { projectRoot, threadDir } = location;
+  return projectRoot !== null && threadDir !== null
+    ? isInsideSubfolder(threadDir, projectRoot, subfolder)
+    : false;
+}
+
+function matchesRepoSlug(repo: string, repoKeys: readonly string[]): boolean {
+  const slug = repo.toLowerCase();
+  return repoKeys.some((key) => {
+    const candidate = key.toLowerCase();
+    return candidate === slug || candidate.endsWith(`/${slug}`);
+  });
+}
+
+/** A path rule matches by folder; any value also matches as a remote slug. */
+function matchesRepoRule(repo: string, location: ThreadGroupLocation): boolean {
+  const { projectRoot, threadDir } = location;
+  const root = isAbsolutePath(repo) ? repo : projectRoot === null ? null : `${projectRoot}/${repo}`;
+  const insideRoot = root !== null && threadDir !== null && isInsideFolder(threadDir, root);
+  return insideRoot || matchesRepoSlug(repo, location.repoKeys ?? []);
+}
+
+function ruleResults(group: ThreadGroupSettings, location: ThreadGroupLocation): boolean[] {
+  const results: boolean[] = [];
+  if (group.autoAddSubfolder) results.push(matchesSubfolderRule(group.autoAddSubfolder, location));
+  if (group.autoAddRepo) results.push(matchesRepoRule(group.autoAddRepo, location));
+  return results;
+}
+
+/** `any` needs one set rule to match, `all` needs every set rule; no rule never matches. */
+export function matchesAutoAddRules(
+  group: ThreadGroupSettings,
+  location: ThreadGroupLocation,
+): boolean {
+  const results = ruleResults(group, location);
+  if (results.length === 0) return false;
+  return group.autoAddMode === "all" ? results.every(Boolean) : results.some(Boolean);
+}
+
+function autoAddGroupOf(
+  groups: readonly ThreadGroup[],
+  location: ThreadGroupLocation | undefined,
+): ThreadGroup | null {
+  if (location === undefined) return null;
+  return groups.find((group) => matchesAutoAddRules(group, location)) ?? null;
+}
+
+/**
+ * The thread's group: its manual membership first, else the first group whose
+ * auto-add rule matches, unless the thread was removed by hand.
+ */
 export function resolveThreadGroup(
   state: ThreadGroupsByProjectKey,
   projectKey: string,
   threadKey: string,
+  location?: ThreadGroupLocation,
 ): ThreadGroup | null {
   const current = projectGroupsOf(state, projectKey);
   const groupId = current.membership[threadKey];
-  return groupId === undefined ? null : (current.groups.find(({ id }) => id === groupId) ?? null);
+  if (groupId !== undefined) return current.groups.find(({ id }) => id === groupId) ?? null;
+  if (current.excluded?.[threadKey]) return null;
+  return autoAddGroupOf(current.groups, location);
 }
 
 export interface ThreadGroupSection<TThread> {
@@ -122,6 +307,7 @@ export function splitThreadsByGroup<TThread>(input: {
   readonly state: ThreadGroupsByProjectKey;
   readonly projectKeyOf: (thread: TThread) => string;
   readonly threadKeyOf: (thread: TThread) => string;
+  readonly locationOf?: (thread: TThread) => ThreadGroupLocation;
   readonly keepEmpty: boolean;
 }): { sections: ThreadGroupSection<TThread>[]; ungrouped: TThread[] } {
   const sections: ThreadGroupSection<TThread>[] = [];
@@ -136,9 +322,13 @@ export function splitThreadsByGroup<TThread>(input: {
   const ungrouped: TThread[] = [];
   for (const thread of input.threads) {
     const projectKey = input.projectKeyOf(thread);
-    const groupId = projectGroupsOf(input.state, projectKey).membership[input.threadKeyOf(thread)];
-    const section =
-      groupId === undefined ? undefined : sectionByGroup.get(`${projectKey}\0${groupId}`);
+    const group = resolveThreadGroup(
+      input.state,
+      projectKey,
+      input.threadKeyOf(thread),
+      input.locationOf?.(thread),
+    );
+    const section = group === null ? undefined : sectionByGroup.get(`${projectKey}\0${group.id}`);
     if (section === undefined) ungrouped.push(thread);
     else section.threads.push(thread);
   }
@@ -148,12 +338,45 @@ export function splitThreadsByGroup<TThread>(input: {
   };
 }
 
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function pickListed<T extends string>(list: readonly T[], value: unknown): T | undefined {
+  return list.find((entry) => entry === value);
+}
+
+/** Unknown or missing settings fall back to the defaults (no icon, no color, no rule). */
+function sanitizeGroupSettings(raw: Record<string, unknown>): ThreadGroupSettings {
+  const icon = pickListed(THREAD_GROUP_ICONS, raw.icon);
+  const color = pickListed(THREAD_GROUP_COLORS, raw.color);
+  const autoAddSubfolder = normalizeSubfolder(stringOrNull(raw.autoAddSubfolder));
+  const autoAddRepo = normalizeRepo(stringOrNull(raw.autoAddRepo));
+  return {
+    ...(icon ? { icon } : {}),
+    ...(color ? { color } : {}),
+    ...(autoAddSubfolder ? { autoAddSubfolder } : {}),
+    ...(autoAddRepo ? { autoAddRepo } : {}),
+    ...(raw.autoAddMode === "all" ? { autoAddMode: "all" as const } : {}),
+  };
+}
+
 function sanitizeGroup(value: unknown): ThreadGroup | null {
   if (!value || typeof value !== "object") return null;
-  const { id, name } = value as Record<string, unknown>;
+  const raw = value as Record<string, unknown>;
+  const { id, name } = raw;
   return typeof id === "string" && id.length > 0 && typeof name === "string" && name.length > 0
-    ? { id, name }
+    ? { id, name, ...sanitizeGroupSettings(raw) }
     : null;
+}
+
+function sanitizeExcluded(value: unknown): Record<string, true> {
+  if (!value || typeof value !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, flag]) => flag === true)
+      .map(([threadKey]) => [threadKey, true as const]),
+  );
 }
 
 function sanitizeProjectGroups(value: unknown): ProjectThreadGroups | null {
@@ -172,7 +395,11 @@ function sanitizeProjectGroups(value: unknown): ProjectThreadGroups | null {
           ),
         )
       : {};
-  return groups.length > 0 ? { groups, membership } : null;
+  const excluded = sanitizeExcluded(raw.excluded);
+  if (groups.length === 0) return null;
+  return Object.keys(excluded).length > 0
+    ? { groups, membership, excluded }
+    : { groups, membership };
 }
 
 export function sanitizeThreadGroups(value: unknown): ThreadGroupsByProjectKey {

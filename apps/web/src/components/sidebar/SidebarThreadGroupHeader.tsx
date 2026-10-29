@@ -4,9 +4,30 @@ import { ChevronDownIcon } from "lucide-react";
 import { memo } from "react";
 
 import { cn } from "~/lib/utils";
-import type { ThreadGroup } from "../../threadGroups";
+import { threadGroupAutoAddHint, type ThreadGroup } from "../../threadGroups";
 import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
 import { SidebarFolderDot, useSidebarFolderDot } from "./SidebarProjectFolderHeader";
+import { ThreadGroupIcon } from "./ThreadGroupIcon";
+
+function GroupTitle(props: { group: ThreadGroup; className?: string }) {
+  const hint = threadGroupAutoAddHint(props.group);
+  return (
+    <span className={cn("flex min-w-0 items-center gap-1.5", props.className)}>
+      <ThreadGroupIcon
+        icon={props.group.icon}
+        color={props.group.color}
+        look="inline"
+        className="size-3.5"
+      />
+      <span className="truncate">{props.group.name}</span>
+      {hint === null ? null : (
+        <span className="max-w-32 truncate font-normal text-sidebar-muted-foreground/70">
+          {hint}
+        </span>
+      )}
+    </span>
+  );
+}
 
 export interface SidebarThreadGroupView {
   readonly projectKey: string;
@@ -89,7 +110,7 @@ export const SidebarThreadGroupHeader = memo(function SidebarThreadGroupHeader(p
             </span>
           }
         >
-          {view.group.name}
+          <GroupTitle group={view.group} className="max-w-60" />
         </CollapsibleSectionHeader>
       ) : (
         <button
@@ -98,14 +119,13 @@ export const SidebarThreadGroupHeader = memo(function SidebarThreadGroupHeader(p
           aria-expanded={!view.collapsed}
           className="flex h-7 w-full cursor-pointer items-center gap-2 rounded-(--control-radius) ps-9 pe-(--sidebar-row-content-inset) text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         >
-          <span
+          <GroupTitle
+            group={view.group}
             className={cn(
-              "min-w-0 flex-1 truncate text-xs font-medium text-sidebar-foreground/80",
+              "flex-1 text-xs font-medium text-sidebar-foreground/80",
               isDropTarget && "text-primary",
             )}
-          >
-            {view.group.name}
-          </span>
+          />
           <SidebarFolderDot dot={dot} />
           {count === null ? null : (
             <span className="shrink-0 text-xs tabular-nums text-sidebar-muted-foreground">
