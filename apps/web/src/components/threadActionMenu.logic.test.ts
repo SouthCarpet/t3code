@@ -2,6 +2,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { buildThreadActionMenuItems, type ThreadActionMenuState } from "./threadActionMenu.logic";
 
+const BAG = { kind: "lucide", name: "shopping-bag", color: "green" } as const;
+
 const baseState: ThreadActionMenuState = {
   canOperate: true,
   branch: null,
@@ -82,7 +84,10 @@ describe("buildThreadActionMenuItems", () => {
     const items = buildThreadActionMenuItems({
       ...baseState,
       groups: {
-        options: [{ id: "a", name: "Alpha", icon: "shopping-bag", iconColor: "green" }],
+        options: [
+          { id: "a", name: "Alpha", icon: BAG },
+          { id: "b", name: "Beta", icon: null },
+        ],
         currentGroupId: current,
       },
     });
@@ -91,10 +96,11 @@ describe("buildThreadActionMenuItems", () => {
     expect(
       items
         .find((item) => item.id === "group-add")
-        ?.children?.map((child) => [child.id, child.checked ?? false, child.icon, child.iconColor]),
+        ?.children?.map((child) => [child.id, child.checked ?? false, child.iconOverride]),
     ).toEqual([
-      ["group-add:a", current === "a", "shopping-bag", "green"],
-      ["group-new", false, undefined, undefined],
+      ["group-add:a", current === "a", BAG],
+      ["group-add:b", false, undefined],
+      ["group-new", false, undefined],
     ]);
   });
 });

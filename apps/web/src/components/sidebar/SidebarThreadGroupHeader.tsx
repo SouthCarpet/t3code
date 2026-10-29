@@ -13,12 +13,7 @@ function GroupTitle(props: { group: ThreadGroup; className?: string }) {
   const hint = threadGroupAutoAddHint(props.group);
   return (
     <span className={cn("flex min-w-0 items-center gap-1.5", props.className)}>
-      <ThreadGroupIcon
-        icon={props.group.icon}
-        color={props.group.color}
-        look="inline"
-        className="size-3.5"
-      />
+      <ThreadGroupIcon icon={props.group.icon} className="size-3.5" />
       {/* The hint gives way first, so the group name stays readable. */}
       <span className="max-w-full shrink-0 truncate">{props.group.name}</span>
       {hint === null ? null : (

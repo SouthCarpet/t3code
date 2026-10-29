@@ -1,4 +1,4 @@
-import type { ContextMenuItem } from "@t3tools/contracts";
+import type { ContextMenuItem, ProjectIconOverride } from "@t3tools/contracts";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 
 export type ThreadActionMenuId =
@@ -104,8 +104,7 @@ export interface ThreadActionMenuState {
     readonly options: ReadonlyArray<{
       readonly id: string;
       readonly name: string;
-      readonly icon: string;
-      readonly iconColor?: string;
+      readonly icon?: ProjectIconOverride | null;
     }>;
     readonly currentGroupId: string | null;
   };
@@ -123,8 +122,7 @@ function buildGroupMenuItems(
       ...groups.options.map((group) => ({
         id: `group-add:${group.id}` as const,
         label: group.name,
-        icon: group.icon,
-        ...(group.iconColor ? { iconColor: group.iconColor } : {}),
+        ...(group.icon ? { iconOverride: group.icon } : {}),
         checked: group.id === groups.currentGroupId,
       })),
       { id: "group-new", label: "New group…", separatorBefore: groups.options.length > 0 },

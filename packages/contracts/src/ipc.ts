@@ -14,6 +14,7 @@ import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import { type ClientSettings, type QuitConfirmationMode, SnapShotShortcut } from "./settings.ts";
 import type { EditorId } from "./editor.ts";
+import type { ProjectIconOverride } from "./project.ts";
 import type { PreviewForwardedShortcut } from "./keybindings.ts";
 
 import type {
@@ -28,8 +29,8 @@ export interface ContextMenuItem<T extends string = string> {
   disabled?: boolean;
   header?: boolean;
   icon?: string;
-  /** CSS color for the icon; the web fallback menu draws it, native menus ignore it. */
-  iconColor?: string;
+  /** A project-style icon in place of `icon`; the web fallback menu draws it, native menus ignore it. */
+  iconOverride?: ProjectIconOverride;
   separatorBefore?: boolean;
   checked?: boolean;
   children?: readonly ContextMenuItem<T>[];

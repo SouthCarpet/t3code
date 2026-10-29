@@ -1249,24 +1249,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                   )}
                 >
                   {props.group ? (
-                    <ThreadGroupIcon
-                      icon={props.group.icon}
-                      color={props.group.color}
-                      look="badge"
-                      className="size-4"
-                    />
+                    <ThreadGroupIcon icon={props.group.icon} className="size-4" />
                   ) : props.project ? (
                     <ProjectFavicon project={props.project} className="size-4" />
                   ) : null}
                 </span>
               )}
               {inFolder && props.group ? (
-                <ThreadGroupIcon
-                  icon={props.group.icon}
-                  color={props.group.color}
-                  look="inline"
-                  className="size-3.5"
-                />
+                <ThreadGroupIcon icon={props.group.icon} className="size-3.5" />
               ) : null}
               {draftIndicator}
               {title}
@@ -1443,12 +1433,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             <div className="flex h-5 min-w-0 items-center gap-1.5">
               {draftIndicator}
               {props.group ? (
-                <ThreadGroupIcon
-                  icon={props.group.icon}
-                  color={props.group.color}
-                  look="badge"
-                  className="size-4"
-                />
+                <ThreadGroupIcon icon={props.group.icon} className="size-4" />
               ) : props.project ? (
                 <ProjectFavicon project={props.project} className="size-4 shrink-0" />
               ) : null}

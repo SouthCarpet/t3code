@@ -10,6 +10,8 @@ import {
   matchesAutoAddRules,
   updateThreadGroupSettings,
   splitThreadsByGroup,
+  subfolderInsideProject,
+  knownRepositorySlugs,
   type ThreadGroupsByProjectKey,
 } from "./threadGroups";
 
@@ -109,6 +111,10 @@ it("sanitizeThreadGroups drops malformed groups and memberships of missing group
   ).toEqual({ [P]: { groups: [{ id: "a", name: "Alpha" }], membership: { t1: "a" } } });
 });
 
+const BAG = { kind: "lucide", name: "shopping-bag", color: "green" } as const;
+const BOOK = { kind: "emoji", emoji: "📘" } as const;
+const MONOGRAM = { kind: "monogram", text: "AU", color: "amber" } as const;
+
 it("sanitizeThreadGroups keeps valid settings and exclusions and drops unknown ones", () => {
   expect(
     sanitizeThreadGroups({
@@ -117,20 +123,12 @@ it("sanitizeThreadGroups keeps valid settings and exclusions and drops unknown o
           {
             id: "a",
             name: "Alpha",
-            icon: "shopping-bag",
-            color: "green",
+            icon: BAG,
             autoAddSubfolder: "/apps/x/",
             autoAddRepo: " Owner/Repo ",
             autoAddMode: "all",
           },
-          {
-            id: "b",
-            name: "Beta",
-            icon: "nope",
-            color: 3,
-            autoAddSubfolder: "  ",
-            autoAddMode: "x",
-          },
+          { id: "b", name: "Beta", icon: "nope", autoAddSubfolder: "  ", autoAddMode: "x" },
         ],
         membership: {},
         excluded: { t1: true, t2: "yes" },
@@ -142,8 +140,7 @@ it("sanitizeThreadGroups keeps valid settings and exclusions and drops unknown o
         {
           id: "a",
           name: "Alpha",
-          icon: "shopping-bag",
-          color: "green",
+          icon: BAG,
           autoAddSubfolder: "apps/x",
           autoAddRepo: "Owner/Repo",
           autoAddMode: "all",
@@ -156,12 +153,29 @@ it("sanitizeThreadGroups keeps valid settings and exclusions and drops unknown o
   });
 });
 
+it.each([
+  ["lucide", BAG, BAG],
+  ["emoji", BOOK, BOOK],
+  ["monogram", MONOGRAM, MONOGRAM],
+  ["a round 2 icon name", "shopping-bag", undefined],
+  ["an unknown kind", { kind: "image", src: "x.png" }, undefined],
+  ["an unknown color", { kind: "lucide", name: "bot", color: "slate" }, undefined],
+  ["a bad icon name", { kind: "lucide", name: "Not An Icon", color: "green" }, undefined],
+  ["a blank emoji", { kind: "emoji", emoji: " " }, undefined],
+  ["a monogram with a symbol", { kind: "monogram", text: "A!", color: "amber" }, undefined],
+  ["null", null, undefined],
+])("sanitizeThreadGroups with %s keeps only a valid project icon", (_label, icon, expected) => {
+  const sanitized = sanitizeThreadGroups({
+    [P]: { groups: [{ id: "a", name: "Alpha", icon }], membership: {} },
+  });
+  expect(sanitized[P]!.groups[0]!.icon).toEqual(expected);
+});
+
 describe("group settings and auto-add", () => {
   const rooted = (state: ThreadGroupsByProjectKey) =>
     updateThreadGroupSettings(state, P, "a", {
       name: " Rift ",
-      icon: "shopping-bag",
-      color: "green",
+      icon: MONOGRAM,
       autoAddSubfolder: "/apps/rift/",
     });
 
@@ -170,12 +184,14 @@ describe("group settings and auto-add", () => {
     expect(state[P]!.groups[0]).toEqual({
       id: "a",
       name: "Rift",
-      icon: "shopping-bag",
-      color: "green",
+      icon: MONOGRAM,
       autoAddSubfolder: "apps/rift",
       autoAddRepo: null,
       autoAddMode: "any",
     });
+    expect(
+      updateThreadGroupSettings(state, P, "a", { name: "Rift", icon: null })[P]!.groups[0],
+    ).not.toHaveProperty("icon");
     expect(updateThreadGroupSettings(state, P, "a", { name: " " })).toBe(state);
     expect(updateThreadGroupSettings(state, P, "zz", { name: "X" })).toBe(state);
   });
@@ -245,5 +261,51 @@ describe("group settings and auto-add", () => {
     const readded = setThreadGroupMembership(removed, P, "t9", "a");
     expect(readded[P]!.excluded).toEqual({});
     expect(resolveThreadGroup(readded, P, "t9", atRoot)?.id).toBe("a");
+  });
+});
+
+describe("opt-in rules", () => {
+  it("keeps a switched-off rule as null and sanitizes null rules away", () => {
+    const state = updateThreadGroupSettings(withGroups(), P, "a", {
+      name: "Alpha",
+      autoAddSubfolder: null,
+      autoAddRepo: "acme/storefront",
+    });
+    expect(state[P]!.groups[0]).toMatchObject({
+      autoAddSubfolder: null,
+      autoAddRepo: "acme/storefront",
+    });
+    expect(
+      sanitizeThreadGroups({
+        [P]: {
+          groups: [{ id: "a", name: "Alpha", autoAddSubfolder: null, autoAddRepo: null }],
+          membership: {},
+        },
+      }),
+    ).toEqual({ [P]: { groups: [{ id: "a", name: "Alpha" }], membership: {} } });
+  });
+
+  it.each([
+    ["C:\\work\\repo", "C:\\work\\repo\\apps\\storefront", "apps/storefront"],
+    ["C:/work/repo/", "c:/WORK/repo/apps/Docs/", "apps/Docs"],
+    ["/home/u/repo", "/home/u/repo/automations", "automations"],
+    ["C:/work/repo", "C:/work/repo", null],
+    ["C:/work/repo", "C:/work/repository/apps", null],
+    ["C:/work/repo", "D:/other/apps", null],
+    ["/home/u/repo", "/home/u/Repo/apps", null],
+  ])("subfolderInsideProject(%s, %s) is %s", (root, picked, expected) => {
+    expect(subfolderInsideProject(root, picked)).toBe(expected);
+  });
+
+  it("lists known repositories once and sorted", () => {
+    expect(
+      knownRepositorySlugs([
+        { repositoryIdentity: { owner: "acme", name: "storefront" } },
+        { repositoryIdentity: null },
+        { repositoryIdentity: { owner: "acme" } },
+        { repositoryIdentity: { owner: "acme", name: "docs-site" } },
+        { repositoryIdentity: { owner: "acme", name: "storefront" } },
+      ]),
+    ).toEqual(["acme/docs-site", "acme/storefront"]);
   });
 });

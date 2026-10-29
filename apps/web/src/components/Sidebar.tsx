@@ -265,9 +265,12 @@ import {
   type SidebarThreadGroupView,
 } from "./sidebar/SidebarThreadGroupHeader";
 import { requestThreadGroupName } from "./ThreadGroupNameDialog";
-import { requestThreadGroupSettings } from "./ThreadGroupSettingsDialog";
-import { THREAD_GROUP_COLOR_STYLES } from "./sidebar/ThreadGroupIcon";
 import {
+  requestThreadGroupSettings,
+  type ThreadGroupSettingsContext,
+} from "./ThreadGroupSettingsDialog";
+import {
+  knownRepositorySlugs,
   resolveThreadGroup,
   splitThreadsByGroup,
   type ThreadGroup,
@@ -435,6 +438,20 @@ function repositoryKeysOf(project: EnvironmentProject | undefined): string[] {
   );
 }
 
+function threadGroupSettingsContext(
+  projectKey: string,
+  projectByKey: ProjectByKey,
+): ThreadGroupSettingsContext {
+  const project = projectByKey.get(projectKey);
+  const sameEnvironment = [...projectByKey.values()].filter(
+    (candidate) => candidate.environmentId === project?.environmentId,
+  );
+  return {
+    projectRoot: project?.workspaceRoot ?? null,
+    knownRepositories: knownRepositorySlugs(sameEnvironment),
+  };
+}
+
 function threadGroupLocationOf(
   thread: EnvironmentThreadShell,
   projectByKey: ProjectByKey,
@@ -493,8 +510,6 @@ async function applyThreadGroupAction(action: string, projectKey: string, thread
   store.setThreadGroupMembership(projectKey, threadKey, id);
 }
 
-const MUTED_ICON_COLOR = "var(--muted-foreground)";
-
 function threadGroupMenuState(
   projectKey: string,
   threadKey: string,
@@ -505,8 +520,7 @@ function threadGroupMenuState(
     options: (groups[projectKey]?.groups ?? []).map((group) => ({
       id: group.id,
       name: group.name,
-      icon: group.icon ?? "folder",
-      iconColor: group.color ? THREAD_GROUP_COLOR_STYLES[group.color].css : MUTED_ICON_COLOR,
+      icon: group.icon ?? null,
     })),
     currentGroupId: resolveThreadGroup(groups, projectKey, threadKey, location)?.id ?? null,
   };
@@ -1401,7 +1415,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           return;
         }
         if (clicked.value === "group-settings") {
-          const settings = await requestThreadGroupSettings(view.group);
+          const settings = await requestThreadGroupSettings(
+            view.group,
+            threadGroupSettingsContext(view.projectKey, projectByKey),
+          );
           if (settings) store.updateThreadGroupSettings(view.projectKey, view.group.id, settings);
           return;
         }

@@ -1,35 +1,14 @@
+import { ProjectIconOverride } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
+
 /**
  * Manual thread groups. They are client-only UI state, kept per physical project
  * (`${environmentId}:${projectId}`): an ordered list of named groups and a map from
  * a scoped thread key to the id of its group.
  */
-export const THREAD_GROUP_ICONS = [
-  "folder",
-  "shopping-bag",
-  "git-branch",
-  "clock",
-  "bot",
-  "rocket",
-  "bug",
-  "book-open",
-] as const;
-export type ThreadGroupIcon = (typeof THREAD_GROUP_ICONS)[number];
-
-export const THREAD_GROUP_COLORS = [
-  "slate",
-  "red",
-  "amber",
-  "green",
-  "teal",
-  "blue",
-  "violet",
-  "pink",
-] as const;
-export type ThreadGroupColor = (typeof THREAD_GROUP_COLORS)[number];
-
 export interface ThreadGroupSettings {
-  readonly icon?: ThreadGroupIcon | undefined;
-  readonly color?: ThreadGroupColor | undefined;
+  /** Same model as a project icon: lucide, emoji or monogram. */
+  readonly icon?: ProjectIconOverride | null;
   /** Project-relative folder; threads that run inside it join the group. */
   readonly autoAddSubfolder?: string | null;
   /** Repository root path (absolute or project-relative) or remote slug `owner/repo`. */
@@ -175,7 +154,6 @@ export function updateThreadGroupSettings(
     id: groupId,
     name,
     ...(settings.icon ? { icon: settings.icon } : {}),
-    ...(settings.color ? { color: settings.color } : {}),
     autoAddSubfolder: normalizeSubfolder(settings.autoAddSubfolder),
     autoAddRepo: normalizeRepo(settings.autoAddRepo),
     autoAddMode: settings.autoAddMode === "all" ? "all" : "any",
@@ -186,11 +164,16 @@ export function updateThreadGroupSettings(
   });
 }
 
-function comparablePath(path: string): string {
-  const unified = path
+function unifiedPath(path: string): string {
+  return path
+    .trim()
     .replaceAll("\\", "/")
     .replace(/(?<!^)\/+/g, "/")
     .replace(/\/+$/, "");
+}
+
+function comparablePath(path: string): string {
+  const unified = unifiedPath(path);
   // Drive-letter and UNC paths are Windows paths, which compare without case.
   return /^([a-z]:|\/\/)/i.test(unified) ? unified.toLowerCase() : unified;
 }
@@ -204,6 +187,33 @@ function isInsideFolder(dir: string, folder: string): boolean {
   const base = comparablePath(folder);
   const candidate = comparablePath(dir);
   return candidate === base || candidate.startsWith(`${base}/`);
+}
+
+/**
+ * A picked folder as a project-relative sub-folder, or null when it is the project
+ * root itself or lies outside it.
+ */
+export function subfolderInsideProject(projectRoot: string, picked: string): string | null {
+  const root = unifiedPath(projectRoot);
+  const folder = unifiedPath(picked);
+  const inside = comparablePath(folder).startsWith(`${comparablePath(root)}/`);
+  return inside ? folder.slice(root.length + 1) : null;
+}
+
+/** The `owner/name` of every known repository, without duplicates, sorted. */
+export function knownRepositorySlugs(
+  projects: Iterable<{
+    readonly repositoryIdentity?:
+      | { readonly owner?: string; readonly name?: string }
+      | null
+      | undefined;
+  }>,
+): string[] {
+  const slugs = new Set<string>();
+  for (const { repositoryIdentity: identity } of projects) {
+    if (identity?.owner && identity.name) slugs.add(`${identity.owner}/${identity.name}`);
+  }
+  return [...slugs].toSorted((a, b) => a.localeCompare(b));
 }
 
 /** True when `threadDir` is `<projectRoot>/<subfolder>` or a folder below it. */
@@ -342,19 +352,15 @@ function stringOrNull(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
-function pickListed<T extends string>(list: readonly T[], value: unknown): T | undefined {
-  return list.find((entry) => entry === value);
-}
+const isProjectIcon = Schema.is(ProjectIconOverride);
 
-/** Unknown or missing settings fall back to the defaults (no icon, no color, no rule). */
+/** Unknown or missing settings fall back to the defaults (no icon, no rule). */
 function sanitizeGroupSettings(raw: Record<string, unknown>): ThreadGroupSettings {
-  const icon = pickListed(THREAD_GROUP_ICONS, raw.icon);
-  const color = pickListed(THREAD_GROUP_COLORS, raw.color);
+  const icon = isProjectIcon(raw.icon) ? raw.icon : null;
   const autoAddSubfolder = normalizeSubfolder(stringOrNull(raw.autoAddSubfolder));
   const autoAddRepo = normalizeRepo(stringOrNull(raw.autoAddRepo));
   return {
     ...(icon ? { icon } : {}),
-    ...(color ? { color } : {}),
     ...(autoAddSubfolder ? { autoAddSubfolder } : {}),
     ...(autoAddRepo ? { autoAddRepo } : {}),
     ...(raw.autoAddMode === "all" ? { autoAddMode: "all" as const } : {}),

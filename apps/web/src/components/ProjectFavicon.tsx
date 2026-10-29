@@ -1,4 +1,5 @@
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+import type { ProjectIconOverride } from "@t3tools/contracts";
 import {
   getProjectFaviconResourceKey,
   isProjectFaviconFallbackUrl,
@@ -28,6 +29,49 @@ function DynamicProjectIconFallback() {
   return <FolderCodeIcon className="size-full text-inherit" />;
 }
 
+/** Draws a chosen icon (lucide, emoji or monogram); project and group avatars share it. */
+export function ProjectIconGlyph(input: {
+  icon: ProjectIconOverride;
+  className?: string | undefined;
+}) {
+  const { icon } = input;
+  if (icon.kind === "monogram") {
+    return <ProjectMonogram text={icon.text} color={icon.color} className={input.className} />;
+  }
+  if (icon.kind === "emoji") {
+    return <ProjectEmoji emoji={icon.emoji} className={input.className} />;
+  }
+  const colorClassName = projectIconColorClassName(icon.color);
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "inline-flex size-3.5 shrink-0 items-center justify-center",
+        colorClassName,
+        input.className,
+      )}
+    >
+      <Suspense fallback={<DynamicProjectIconFallback />}>
+        <LucideProjectIcon name={icon.name} className={cn("size-full", colorClassName)} />
+      </Suspense>
+    </span>
+  );
+}
+
+function ProjectEmoji({ emoji, className }: { emoji: string; className?: string | undefined }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "inline-flex size-3.5 shrink-0 items-center justify-center leading-none [container-type:size]",
+        className,
+      )}
+    >
+      <span className="text-[length:80cqh] leading-none">{emoji}</span>
+    </span>
+  );
+}
+
 export type ProjectFaviconProject = Pick<
   EnvironmentProject,
   "environmentId" | "workspaceRoot" | "title" | "faviconPath" | "projectIcon"
@@ -45,41 +89,8 @@ export function ProjectFavicon(input: {
       faviconPath: project.faviconPath,
     }),
   );
-  if (project.projectIcon?.kind === "monogram") {
-    return (
-      <ProjectMonogram
-        text={project.projectIcon.text}
-        color={project.projectIcon.color}
-        className={input.className}
-      />
-    );
-  }
-  if (project.projectIcon?.kind === "emoji") {
-    return (
-      <ProjectFaviconFallback
-        className={input.className}
-        icon={FolderCodeIcon}
-        emoji={project.projectIcon.emoji}
-      />
-    );
-  }
-  if (project.projectIcon?.kind === "lucide") {
-    const colorClassName = projectIconColorClassName(project.projectIcon.color);
-    const iconClassName = cn(
-      "inline-flex size-3.5 shrink-0 items-center justify-center",
-      colorClassName,
-      input.className,
-    );
-    return (
-      <span aria-hidden="true" className={iconClassName}>
-        <Suspense fallback={<DynamicProjectIconFallback />}>
-          <LucideProjectIcon
-            name={project.projectIcon.name}
-            className={cn("size-full", colorClassName)}
-          />
-        </Suspense>
-      </span>
-    );
+  if (project.projectIcon) {
+    return <ProjectIconGlyph icon={project.projectIcon} className={input.className} />;
   }
   const FallbackIcon = input.fallbackIcon ?? FolderCodeIcon;
 
@@ -113,32 +124,16 @@ export function ProjectFavicon(input: {
 function ProjectFaviconFallback({
   className,
   icon: Icon,
-  emoji,
   projectName,
 }: {
   readonly className?: string | undefined;
   readonly icon: ComponentType<{ className?: string }>;
-  readonly emoji?: string | undefined;
   readonly projectName?: string | undefined;
 }) {
   if (projectName && projectName.trim().length > 0) {
     const identity = deriveProjectIdentity(projectName);
     return (
       <ProjectMonogram text={identity.monogram} color={identity.color} className={className} />
-    );
-  }
-
-  if (emoji) {
-    return (
-      <span
-        aria-hidden="true"
-        className={cn(
-          "inline-flex size-3.5 shrink-0 items-center justify-center leading-none [container-type:size]",
-          className,
-        )}
-      >
-        <span className="text-[length:80cqh] leading-none">{emoji}</span>
-      </span>
     );
   }
 
