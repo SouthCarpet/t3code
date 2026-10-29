@@ -2,6 +2,15 @@ import { Debouncer } from "@tanstack/react-pacer";
 import type { PullRequestMergeMethod } from "@t3tools/contracts";
 import { create } from "zustand";
 import { normalizeProjectPathForComparison } from "@t3tools/client-runtime/state/projects";
+import {
+  createThreadGroup,
+  deleteThreadGroup,
+  renameThreadGroup,
+  sanitizeThreadGroups,
+  setThreadGroupMembership,
+  type ThreadGroup,
+  type ThreadGroupsByProjectKey,
+} from "./threadGroups";
 
 export const PERSISTED_STATE_KEY = "t3code:ui-state:v1";
 const THREAD_CHANGED_FILES_EXPANSION_VERSION = 2;
@@ -31,12 +40,16 @@ export interface PersistedUiState {
   threadChangedFilesExpansionVersion?: number;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
   pullRequestMergeMethod?: string;
+  threadGroupsByProjectKey?: unknown;
+  threadGroupCollapsedById?: Record<string, boolean>;
 }
 
 export interface UiProjectState {
   projectExpandedById: Record<string, boolean>;
   projectOrder: string[];
   sidebarProjectScopeKeys: string[];
+  threadGroupsByProjectKey: ThreadGroupsByProjectKey;
+  threadGroupCollapsedById: Record<string, boolean>;
 }
 
 export interface UiThreadState {
@@ -59,6 +72,8 @@ const initialState: UiState = {
   projectExpandedById: {},
   projectOrder: [],
   sidebarProjectScopeKeys: [],
+  threadGroupsByProjectKey: {},
+  threadGroupCollapsedById: {},
   threadLastVisitedAtById: {},
   threadChangedFilesExpandedById: {},
   defaultAdvertisedEndpointKey: null,
@@ -157,6 +172,8 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
     pullRequestMergeMethod: isPullRequestMergeMethod(parsed.pullRequestMergeMethod)
       ? parsed.pullRequestMergeMethod
       : initialState.pullRequestMergeMethod,
+    threadGroupsByProjectKey: sanitizeThreadGroups(parsed.threadGroupsByProjectKey),
+    threadGroupCollapsedById: sanitizeBooleanRecord(parsed.threadGroupCollapsedById),
   };
 }
 
@@ -236,6 +253,8 @@ export function persistState(state: UiState): void {
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
         pullRequestMergeMethod: state.pullRequestMergeMethod,
+        threadGroupsByProjectKey: state.threadGroupsByProjectKey,
+        threadGroupCollapsedById: state.threadGroupCollapsedById,
       } satisfies PersistedUiState),
     );
     if (!legacyKeysCleanedUp) {
@@ -441,6 +460,21 @@ interface UiStateStore extends UiState {
     draggedProjectIds: readonly string[],
     targetProjectIds: readonly string[],
   ) => void;
+  createThreadGroup: (projectKey: string, group: ThreadGroup) => void;
+  renameThreadGroup: (projectKey: string, groupId: string, name: string) => void;
+  deleteThreadGroup: (projectKey: string, groupId: string) => void;
+  setThreadGroupMembership: (projectKey: string, threadKey: string, groupId: string | null) => void;
+  toggleThreadGroupCollapsed: (groupId: string) => void;
+}
+
+function updateThreadGroups(
+  state: UiState,
+  update: (groups: ThreadGroupsByProjectKey) => ThreadGroupsByProjectKey,
+): UiState {
+  const next = update(state.threadGroupsByProjectKey);
+  return next === state.threadGroupsByProjectKey
+    ? state
+    : { ...state, threadGroupsByProjectKey: next };
 }
 
 export const useUiStateStore = create<UiStateStore>((set) => ({
@@ -462,6 +496,31 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) =>
       reorderProjects(state, currentProjectOrder, draggedProjectIds, targetProjectIds),
     ),
+  createThreadGroup: (projectKey, group) =>
+    set((state) =>
+      updateThreadGroups(state, (groups) => createThreadGroup(groups, projectKey, group)),
+    ),
+  renameThreadGroup: (projectKey, groupId, name) =>
+    set((state) =>
+      updateThreadGroups(state, (groups) => renameThreadGroup(groups, projectKey, groupId, name)),
+    ),
+  deleteThreadGroup: (projectKey, groupId) =>
+    set((state) =>
+      updateThreadGroups(state, (groups) => deleteThreadGroup(groups, projectKey, groupId)),
+    ),
+  setThreadGroupMembership: (projectKey, threadKey, groupId) =>
+    set((state) =>
+      updateThreadGroups(state, (groups) =>
+        setThreadGroupMembership(groups, projectKey, threadKey, groupId),
+      ),
+    ),
+  toggleThreadGroupCollapsed: (groupId) =>
+    set((state) => ({
+      threadGroupCollapsedById: {
+        ...state.threadGroupCollapsedById,
+        [groupId]: !state.threadGroupCollapsedById[groupId],
+      },
+    })),
 }));
 
 useUiStateStore.subscribe((state) => debouncedPersistState.maybeExecute(state));

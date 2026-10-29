@@ -29,6 +29,35 @@ export function sidebarFolderRowId(projectKey: string) {
   return `folder:${projectKey}`;
 }
 
+/** The folder status dot of the threads a closed row hides, or null while open. */
+export function useSidebarFolderDot(
+  collapsed: boolean,
+  hiddenThreads: readonly EnvironmentThreadShell[],
+) {
+  const localLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
+  return collapsed
+    ? resolveSidebarFolderDot(
+        hiddenThreads.map((thread) => ({
+          ...thread,
+          lastVisitedAt: resolveThreadLastVisitedAt(
+            thread.lastVisitedAt,
+            localLastVisitedAtById[
+              scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))
+            ],
+          ),
+        })),
+      )
+    : null;
+}
+
+export function SidebarFolderDot(props: { dot: ReturnType<typeof useSidebarFolderDot> }) {
+  return props.dot ? (
+    <span className={cn("size-1.5 shrink-0 rounded-full", FOLDER_DOT_CLASS_NAME[props.dot])}>
+      <span className="sr-only">{FOLDER_DOT_LABEL[props.dot]}</span>
+    </span>
+  ) : null;
+}
+
 /**
  * A project folder in the boring sidebar. It reads like a shelf header: a trailing
  * count and chevron, with the count and a status dot only while it is closed, so a
@@ -44,20 +73,7 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
 }) {
   const { group, collapsed, hiddenThreads } = props;
   const rowId = sidebarFolderRowId(group.projectKey);
-  const localLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
-  const dot = collapsed
-    ? resolveSidebarFolderDot(
-        hiddenThreads.map((thread) => ({
-          ...thread,
-          lastVisitedAt: resolveThreadLastVisitedAt(
-            thread.lastVisitedAt,
-            localLastVisitedAtById[
-              scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))
-            ],
-          ),
-        })),
-      )
-    : null;
+  const dot = useSidebarFolderDot(collapsed, hiddenThreads);
   return (
     <li
       data-testid="sidebar-project-folder"
@@ -80,11 +96,7 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-sidebar-foreground/90">
           {group.displayName}
         </span>
-        {dot ? (
-          <span className={cn("size-1.5 shrink-0 rounded-full", FOLDER_DOT_CLASS_NAME[dot])}>
-            <span className="sr-only">{FOLDER_DOT_LABEL[dot]}</span>
-          </span>
-        ) : null}
+        <SidebarFolderDot dot={dot} />
         {collapsed && hiddenThreads.length > 0 ? (
           <span className="shrink-0 text-xs tabular-nums text-sidebar-muted-foreground group-hover/project-folder:invisible pointer-coarse:invisible">
             {hiddenThreads.length}

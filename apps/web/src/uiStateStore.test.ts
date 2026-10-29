@@ -20,6 +20,8 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     projectExpandedById: {},
     projectOrder: [],
     sidebarProjectScopeKeys: [],
+    threadGroupsByProjectKey: {},
+    threadGroupCollapsedById: {},
     threadLastVisitedAtById: {},
     threadChangedFilesExpandedById: {},
     defaultAdvertisedEndpointKey: null,
@@ -127,6 +129,8 @@ describe("parsePersistedState", () => {
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       sidebarProjectScopeKeys: [],
       pullRequestMergeMethod: "merge",
+      threadGroupsByProjectKey: {},
+      threadGroupCollapsedById: {},
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
           "turn-1": false,
@@ -214,6 +218,13 @@ describe("uiStateStore persistence", () => {
         },
       },
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
+      threadGroupsByProjectKey: {
+        "environment:project-1": {
+          groups: [{ id: "group-1", name: "Group" }],
+          membership: { "environment:thread-1": "group-1" },
+        },
+      },
+      threadGroupCollapsedById: { "group-1": true },
     });
 
     persistState(state);
@@ -240,6 +251,13 @@ describe("uiStateStore persistence", () => {
         },
       },
       pullRequestMergeMethod: "merge",
+      threadGroupsByProjectKey: {
+        "environment:project-1": {
+          groups: [{ id: "group-1", name: "Group" }],
+          membership: { "environment:thread-1": "group-1" },
+        },
+      },
+      threadGroupCollapsedById: { "group-1": true },
     });
     expect(parsePersistedState(persisted)).toEqual({
       ...state,

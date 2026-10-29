@@ -17,6 +17,10 @@ export type ThreadActionMenuId =
   | "snooze"
   | `snooze:${string}`
   | "unsnooze"
+  | "group-add"
+  | `group-add:${string}`
+  | "group-new"
+  | "group-remove"
   | "rename"
   | "regenerate-title"
   | "mark-unread"
@@ -95,22 +99,53 @@ export interface ThreadActionMenuState {
   readonly canShareWithGuest?: boolean;
   /** A No project thread with its own folder, on a server that can promote it. */
   readonly canTurnIntoProject?: boolean;
+  /** Client-only groups of the thread's project; omitted where grouping is not offered. */
+  readonly groups?: {
+    readonly options: ReadonlyArray<{ readonly id: string; readonly name: string }>;
+    readonly currentGroupId: string | null;
+  };
+}
+
+function buildGroupMenuItems(
+  groups: ThreadActionMenuState["groups"],
+): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
+  if (!groups) return [];
+  const addItem: ContextMenuItem<ThreadActionMenuId> = {
+    id: "group-add",
+    label: "Add to group",
+    icon: "folder-plus",
+    children: [
+      ...groups.options.map((group) => ({
+        id: `group-add:${group.id}` as const,
+        label: group.name,
+        checked: group.id === groups.currentGroupId,
+      })),
+      { id: "group-new", label: "New group…", separatorBefore: groups.options.length > 0 },
+    ],
+  };
+  return groups.currentGroupId === null
+    ? [addItem]
+    : [addItem, { id: "group-remove", label: "Remove from group", icon: "folder" }];
 }
 
 /** Local navigation, read markers, and copying remain available to read-only clients. */
 export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean {
-  return ![
-    "find",
-    "new-thread-on-branch",
-    "project-settings",
-    "mark-unread",
-    "share-guest",
-    "copy",
-    "copy-path",
-    "copy-branch",
-    "copy-thread",
-    "copy-thread-id",
-  ].includes(action);
+  return (
+    ![
+      "find",
+      "new-thread-on-branch",
+      "project-settings",
+      "mark-unread",
+      "share-guest",
+      "copy",
+      "copy-path",
+      "copy-branch",
+      "copy-thread",
+      "copy-thread-id",
+      "group-new",
+      "group-remove",
+    ].includes(action) && !action.startsWith("group-add")
+  );
 }
 
 export function buildThreadActionMenuItems(
@@ -166,6 +201,7 @@ export function buildThreadActionMenuItems(
               },
         ]
       : []),
+    ...buildGroupMenuItems(state.groups),
     { id: "rename", label: "Rename thread", icon: "pencil", separatorBefore: true },
     ...(state.supports.titleRegeneration
       ? [

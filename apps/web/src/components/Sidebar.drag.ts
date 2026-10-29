@@ -249,3 +249,28 @@ export function createSidebarSortingStrategy(input: {
       : (transforms[args.index] ?? stationary);
   };
 }
+
+/** A thread group header under the pointer wins over every list target. */
+export function preferPointerDropTarget(
+  detection: CollisionDetection,
+  accepts: (id: string) => boolean,
+): CollisionDetection {
+  return (args) => {
+    const pointer = args.pointerCoordinates;
+    const hit =
+      pointer === null
+        ? undefined
+        : args.droppableContainers.find((container) => {
+            const rect = args.droppableRects.get(container.id);
+            return (
+              rect !== undefined &&
+              accepts(String(container.id)) &&
+              pointer.x >= rect.left &&
+              pointer.x <= rect.right &&
+              pointer.y >= rect.top &&
+              pointer.y <= rect.bottom
+            );
+          });
+    return hit === undefined ? detection(args) : [{ id: hit.id }];
+  };
+}

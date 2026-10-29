@@ -74,4 +74,24 @@ describe("buildThreadActionMenuItems", () => {
     expect(items.find((item) => item.id === "archive")?.disabled).toBe(true);
     expect(items.find((item) => item.id === "turn-into-project")?.disabled).toBe(true);
   });
+
+  it.each([
+    [null, ["snooze", "group-add", "rename"]],
+    ["a", ["snooze", "group-add", "group-remove", "rename"]],
+  ] as const)("places group items after the lifecycle items (current %s)", (current, ids) => {
+    const items = buildThreadActionMenuItems({
+      ...baseState,
+      groups: { options: [{ id: "a", name: "Alpha" }], currentGroupId: current },
+    });
+    const start = items.findIndex((item) => item.id === "snooze");
+    expect(items.slice(start, start + ids.length).map((item) => item.id)).toEqual(ids);
+    expect(
+      items
+        .find((item) => item.id === "group-add")
+        ?.children?.map((child) => [child.id, child.checked ?? false]),
+    ).toEqual([
+      ["group-add:a", current === "a"],
+      ["group-new", false],
+    ]);
+  });
 });

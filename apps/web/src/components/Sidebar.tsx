@@ -206,6 +206,7 @@ import {
 } from "./Sidebar.logic";
 import {
   createSidebarCollisionDetection,
+  preferPointerDropTarget,
   createSidebarSortingStrategy,
   restrictBelowSidebarLabel,
 } from "./Sidebar.drag";
@@ -256,6 +257,19 @@ import {
   SidebarProjectFolderHeader,
   sidebarFolderRowId,
 } from "./sidebar/SidebarProjectFolderHeader";
+import {
+  parseSidebarThreadGroupDropId,
+  SidebarThreadGroupHeader,
+  sidebarThreadGroupRowId,
+  type SidebarThreadGroupView,
+} from "./sidebar/SidebarThreadGroupHeader";
+import { requestThreadGroupName } from "./ThreadGroupNameDialog";
+import {
+  resolveThreadGroup,
+  splitThreadsByGroup,
+  type ThreadGroupSection,
+  type ThreadGroupsByProjectKey,
+} from "../threadGroups";
 import {
   SidebarDragBoundary,
   SidebarSectionHeader,
@@ -354,6 +368,7 @@ function threadShellKey(thread: Pick<SidebarThreadSummary, "environmentId" | "id
 }
 
 const NO_DRAGGED_ORDER: readonly string[] = [];
+const NO_THREAD_GROUPS: readonly SidebarThreadGroupView[] = [];
 const NO_DRAGGED_ORDERS: {
   readonly settledOrder: readonly string[];
   readonly activeOrder: readonly string[] | undefined;
@@ -382,6 +397,76 @@ function resolveDraggedOrders(input: {
           inboxReturns.returnedAt,
         ).map(threadShellKey)
       : undefined,
+  };
+}
+
+function toThreadGroupViews(
+  sections: readonly ThreadGroupSection<EnvironmentThreadShell>[],
+  collapsedById: Readonly<Record<string, boolean>>,
+  routeRowThreadKey: string | null,
+): SidebarThreadGroupView[] {
+  return sections.map((section) => {
+    const collapsed = collapsedById[section.group.id] === true;
+    return {
+      projectKey: section.projectKey,
+      group: section.group,
+      collapsed,
+      threads: collapsed ? routeThreadOnly(section.threads, routeRowThreadKey) : section.threads,
+      hiddenThreads: collapsed
+        ? section.threads.filter((thread) => threadShellKey(thread) !== routeRowThreadKey)
+        : EMPTY_THREADS,
+    };
+  });
+}
+
+function splitSidebarThreadGroups(input: {
+  readonly threads: readonly EnvironmentThreadShell[];
+  readonly projectKeys: readonly string[];
+  readonly state: ThreadGroupsByProjectKey;
+  readonly collapsedById: Readonly<Record<string, boolean>>;
+  readonly routeRowThreadKey: string | null;
+  readonly keepEmpty: boolean;
+}) {
+  const { sections, ungrouped } = splitThreadsByGroup({
+    threads: input.threads,
+    projectKeys: input.projectKeys,
+    state: input.state,
+    projectKeyOf: (thread) => `${thread.environmentId}:${thread.projectId}`,
+    threadKeyOf: threadShellKey,
+    keepEmpty: input.keepEmpty,
+  });
+  return {
+    groups: toThreadGroupViews(sections, input.collapsedById, input.routeRowThreadKey),
+    ungrouped,
+  };
+}
+
+function newThreadGroupId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function applyThreadGroupAction(action: string, projectKey: string, threadKey: string) {
+  const store = useUiStateStore.getState();
+  if (action === "group-remove") {
+    store.setThreadGroupMembership(projectKey, threadKey, null);
+    return;
+  }
+  if (action !== "group-new") {
+    store.setThreadGroupMembership(projectKey, threadKey, action.slice("group-add:".length));
+    return;
+  }
+  const name = await requestThreadGroupName({ title: "New group", submitLabel: "Create group" });
+  if (!name) return;
+  const id = newThreadGroupId();
+  store.createThreadGroup(projectKey, { id, name });
+  store.setThreadGroupMembership(projectKey, threadKey, id);
+}
+
+function threadGroupMenuState(projectKey: string, threadKey: string) {
+  const groups = useUiStateStore.getState().threadGroupsByProjectKey;
+  return {
+    options: groups[projectKey]?.groups ?? [],
+    currentGroupId: resolveThreadGroup(groups, projectKey, threadKey)?.id ?? null,
   };
 }
 
@@ -447,6 +532,8 @@ function useSidebarThreads(input: {
   // Shared with the old per-project sidebar, so folders keep their open state.
   const projectExpandedById = useUiStateStore((store) => store.projectExpandedById);
   const setProjectExpanded = useUiStateStore((store) => store.setProjectExpanded);
+  const threadGroupsByProjectKey = useUiStateStore((store) => store.threadGroupsByProjectKey);
+  const threadGroupCollapsedById = useUiStateStore((store) => store.threadGroupCollapsedById);
   const [settledTail, setSettledTail] = useState({
     scopeKey: projectScopeKey,
     count: SETTLED_TAIL_INITIAL_COUNT,
@@ -510,22 +597,47 @@ function useSidebarThreads(input: {
             projectExpandedById,
             sidebarFolderExpansionKeys(folder.group),
           );
+          const split = splitSidebarThreadGroups({
+            threads: folder.threads,
+            projectKeys: folder.group.memberProjectRefs.map(
+              (ref) => `${ref.environmentId}:${ref.projectId}`,
+            ),
+            state: threadGroupsByProjectKey,
+            collapsedById: threadGroupCollapsedById,
+            routeRowThreadKey,
+            keepEmpty: true,
+          });
           return {
             group: folder.group,
             collapsed,
+            threadGroups: split.groups,
+            ungroupedThreads: split.ungrouped,
             // A closed folder still shows the open thread, and hints at the rest.
             threads: collapsed
               ? routeThreadOnly(folder.threads, routeRowThreadKey)
-              : folder.threads,
+              : [...split.groups.flatMap((group) => group.threads), ...split.ungrouped],
             hiddenThreads: collapsed
               ? folder.threads.filter((thread) => threadShellKey(thread) !== routeRowThreadKey)
               : EMPTY_THREADS,
           };
         });
+  const activeGroupSplit =
+    folderGroups === null
+      ? splitSidebarThreadGroups({
+          threads: activeThreads,
+          projectKeys: Object.keys(threadGroupsByProjectKey),
+          state: threadGroupsByProjectKey,
+          collapsedById: threadGroupCollapsedById,
+          routeRowThreadKey,
+          keepEmpty: false,
+        })
+      : null;
+  const ungroupedActiveThreads = activeGroupSplit?.ungrouped ?? activeThreads;
+  const activeThreadGroups = activeGroupSplit?.groups ?? NO_THREAD_GROUPS;
   const orderedThreads = [
     ...pinnedThreads,
     ...(projectFolders === null
-      ? activeThreads
+      ? [...activeThreadGroups.flatMap((group) => group.threads), ...ungroupedActiveThreads]
       : projectFolders.flatMap((folder) => folder.threads)),
     ...visibleWorkingThreads,
     ...visibleSnoozedThreads,
@@ -568,6 +680,8 @@ function useSidebarThreads(input: {
     workingShelfExpanded,
     toggleWorkingShelf: () => setWorkingShelfExpanded((value) => !value),
     projectFolders,
+    activeThreadGroups,
+    ungroupedActiveThreads,
     toggleProjectFolder: (group: SidebarProjectSnapshot) => {
       const keys = sidebarFolderExpansionKeys(group);
       setProjectExpanded(keys, !resolveProjectExpanded(projectExpandedById, keys));
@@ -1206,6 +1320,38 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     if (isMobile) setOpenMobile(false);
     void handleNewThread(scopeProjectRef(group.environmentId, group.id));
   });
+  const toggleThreadGroupCollapsed = useUiStateStore((store) => store.toggleThreadGroupCollapsed);
+  const handleThreadGroupContextMenu = useStableCallback(
+    (view: SidebarThreadGroupView, position: { x: number; y: number }) => {
+      const api = readLocalApi();
+      if (!api) return;
+      void (async () => {
+        const clicked = await settlePromise(() =>
+          api.contextMenu.show(
+            [
+              { id: "rename-group", label: "Rename group", icon: "pencil" },
+              { id: "delete-group", label: "Delete group", icon: "trash", destructive: true },
+            ],
+            position,
+          ),
+        );
+        if (clicked._tag === "Failure") return;
+        const store = useUiStateStore.getState();
+        if (clicked.value === "delete-group") {
+          store.deleteThreadGroup(view.projectKey, view.group.id);
+          return;
+        }
+        if (clicked.value !== "rename-group") return;
+        const name = await requestThreadGroupName({
+          title: "Rename group",
+          submitLabel: "Rename",
+          initialName: view.group.name,
+        });
+        if (name) store.renameThreadGroup(view.projectKey, view.group.id, name);
+      })();
+    },
+  );
+
   const handleProjectFolderContextMenu = useStableCallback(
     (group: SidebarProjectSnapshot, position: { x: number; y: number }) => {
       const api = readLocalApi();
@@ -1260,6 +1406,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     workingShelfExpanded,
     toggleWorkingShelf,
     projectFolders,
+    activeThreadGroups,
+    ungroupedActiveThreads,
     toggleProjectFolder,
     renderedSettledThreads,
     visibleSnoozedThreads,
@@ -1873,7 +2021,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     const pinnedRows = rowsOf(pinnedThreads, "pinned");
     items.push(...pinnedRows);
     items.push({ kind: "marker", marker: "pinned-divider" });
-    const activeRows = rowsOf(activeThreads, "active");
+    const activeRows = rowsOf(ungroupedActiveThreads, "active");
     items.push({ kind: "marker", marker: "active-placeholder" });
     items.push(...activeRows);
     if (workingThreads.length > 0) {
@@ -1953,7 +2101,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         });
   const sidebarSortingStrategy = createSidebarSortingStrategy({
     items: sidebarListItems,
-    enabled: !isContextDrag,
+    enabled: !isContextDrag && projectFolders === null,
     boundaryLabelHeight: SIDEBAR_DRAG_LABEL_HEIGHT,
     settledOrder: draggedSettledOrder,
     ...(draggedActiveOrder === undefined ? {} : { activeOrder: draggedActiveOrder }),
@@ -1965,11 +2113,23 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const draggedThreadKey = dragState?.activeKey;
   const draggedFromSection = dragState?.activeSection;
   const dragActivationY = dragState?.activationY;
-  const dndCollisionDetection = (() => {
+  const draggedThread =
+    draggedThreadKey === undefined ? undefined : threadByKey.get(draggedThreadKey);
+  const acceptsThreadGroupDrop = (id: string) => {
+    const drop = parseSidebarThreadGroupDropId(id);
+    return (
+      drop !== null &&
+      draggedThread !== undefined &&
+      drop.projectKey === `${draggedThread.environmentId}:${draggedThread.projectId}`
+    );
+  };
+  const listCollisionDetection = (() => {
     if (draggedThreadKey === undefined || draggedFromSection === undefined)
       return createSidebarCollisionDetection(() => true);
     const source = threadByKey.get(draggedThreadKey);
-    if (source === undefined) return createSidebarCollisionDetection(() => false);
+    // Boring folders keep their order, so a group header is their only drop target.
+    if (source === undefined || projectFolders !== null)
+      return createSidebarCollisionDetection(() => false);
     return createSidebarCollisionDetection(
       (id) => {
         const target = resolveSidebarDropTarget(sidebarListItems, draggedThreadKey, id);
@@ -1998,8 +2158,21 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       },
     );
   })();
+  const dndCollisionDetection = preferPointerDropTarget(
+    listCollisionDetection,
+    acceptsThreadGroupDrop,
+  );
   const handleThreadDragEnd = (event: DragEndEvent) => {
     const activeKey = String(event.active.id);
+    const groupDrop =
+      event.over === null ? null : parseSidebarThreadGroupDropId(String(event.over.id));
+    if (groupDrop !== null) {
+      useUiStateStore
+        .getState()
+        .setThreadGroupMembership(groupDrop.projectKey, activeKey, groupDrop.groupId);
+      return;
+    }
+    if (projectFolders !== null) return;
     const activeSection = sectionByThreadKey.get(activeKey);
     const target =
       event.over === null
@@ -2531,6 +2704,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           timestampFormat,
           thread.environmentId,
         );
+        const threadProjectKey = `${thread.environmentId}:${thread.projectId}`;
         const threadProjectGroup =
           projectGroupsRef.current.find((project) =>
             project.memberProjectRefs.some(
@@ -2572,11 +2746,16 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 titleRegeneration: configLoaded,
               },
               snoozePresets,
+              groups: threadGroupMenuState(threadProjectKey, threadKey),
             }),
             position,
           ),
         );
         if (clicked._tag === "Failure" || clicked.value === null) return;
+        if (clicked.value.startsWith("group-")) {
+          await applyThreadGroupAction(clicked.value, threadProjectKey, threadKey);
+          return;
+        }
         if (threadActionRequiresOperate(clicked.value) && !checkThreadOperations([thread])) return;
         if (clicked.value?.startsWith("snooze:")) {
           const preset =
@@ -3189,6 +3368,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         section: SidebarSection,
                         // The tree row of the project folder this row sits in.
                         folderRow?: string,
+                        groupRow?: string,
                       ) => {
                         const threadKey = scopedThreadKey(
                           scopeThreadRef(thread.environmentId, thread.id),
@@ -3208,7 +3388,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             sortableId={threadKey}
                             contextDrag={isContextDrag}
                             sortableDisabled={
-                              projectFolders !== null ||
+                              groupRow !== undefined ||
                               renamingThreadKey === threadKey ||
                               !draggableThreadKeys.has(threadKey) ||
                               optimisticDrop !== null
@@ -3216,6 +3396,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             thread={thread}
                             variant={rowVariant}
                             navigationParent={
+                              groupRow ??
                               folderRow ??
                               (section === "working" ||
                               section === "snoozed" ||
@@ -3304,7 +3485,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           />
                         );
                       };
-                      const from = isContextDrag ? null : (dragState?.activeSection ?? null);
+                      // Boring folders only drop onto groups, so no section boundary shows.
+                      const from =
+                        isContextDrag || projectFolders !== null
+                          ? null
+                          : (dragState?.activeSection ?? null);
                       const items: ReactNode[] = [
                         <SidebarDraftBlock
                           key="draft-sessions"
@@ -3316,6 +3501,32 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           onDraftContextMenu={handleDraftContextMenu}
                         />,
                       ];
+                      const pushThreadGroup = (
+                        view: SidebarThreadGroupView,
+                        variant: "folder" | "section",
+                        folderRow?: string,
+                      ) => {
+                        const groupRow = sidebarThreadGroupRowId(view);
+                        items.push(
+                          <SidebarThreadGroupHeader
+                            key={groupRow}
+                            view={view}
+                            variant={variant}
+                            onToggle={toggleThreadGroupCollapsed}
+                            onContextMenu={handleThreadGroupContextMenu}
+                          />,
+                        );
+                        for (const thread of view.threads) {
+                          items.push(
+                            renderThreadRow(
+                              thread,
+                              "active",
+                              folderRow,
+                              variant === "section" ? groupRow : undefined,
+                            ),
+                          );
+                        }
+                      };
                       for (const item of sidebarListItems) {
                         if (item.kind === "thread") {
                           // Folders draw active rows in their own place below.
@@ -3336,14 +3547,17 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 onContextMenu={handleProjectFolderContextMenu}
                               />,
                             );
-                            for (const thread of folder.threads) {
-                              items.push(
-                                renderThreadRow(
-                                  thread,
-                                  "active",
-                                  sidebarFolderRowId(folder.group.projectKey),
-                                ),
-                              );
+                            const folderRow = sidebarFolderRowId(folder.group.projectKey);
+                            if (!folder.collapsed) {
+                              for (const view of folder.threadGroups) {
+                                pushThreadGroup(view, "folder", folderRow);
+                              }
+                            }
+                            const flatThreads = folder.collapsed
+                              ? folder.threads
+                              : folder.ungroupedThreads;
+                            for (const thread of flatThreads) {
+                              items.push(renderThreadRow(thread, "active", folderRow));
                             }
                           }
                           continue;
@@ -3388,6 +3602,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 isDropTarget={dragTargetSection === "active"}
                               />,
                             );
+                            for (const view of activeThreadGroups) pushThreadGroup(view, "section");
                             break;
                           case "working-header":
                             items.push(
