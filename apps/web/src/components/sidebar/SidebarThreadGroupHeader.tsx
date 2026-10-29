@@ -19,9 +19,10 @@ function GroupTitle(props: { group: ThreadGroup; className?: string }) {
         look="inline"
         className="size-3.5"
       />
-      <span className="truncate">{props.group.name}</span>
+      {/* The hint gives way first, so the group name stays readable. */}
+      <span className="max-w-full shrink-0 truncate">{props.group.name}</span>
       {hint === null ? null : (
-        <span className="max-w-32 truncate font-normal text-sidebar-muted-foreground/70">
+        <span className="min-w-0 truncate font-normal text-sidebar-muted-foreground/70">
           {hint}
         </span>
       )}
@@ -110,7 +111,7 @@ export const SidebarThreadGroupHeader = memo(function SidebarThreadGroupHeader(p
             </span>
           }
         >
-          <GroupTitle group={view.group} className="max-w-60" />
+          <GroupTitle group={view.group} className="max-w-40" />
         </CollapsibleSectionHeader>
       ) : (
         <button
