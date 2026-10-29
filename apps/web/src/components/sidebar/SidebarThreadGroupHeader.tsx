@@ -96,7 +96,7 @@ export const SidebarThreadGroupHeader = memo(function SidebarThreadGroupHeader(p
           {...shared}
           type="button"
           aria-expanded={!view.collapsed}
-          className="flex h-7 w-full cursor-pointer items-center gap-2 rounded-(--control-radius) ps-7 pe-(--sidebar-row-content-inset) text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          className="flex h-7 w-full cursor-pointer items-center gap-2 rounded-(--control-radius) ps-9 pe-(--sidebar-row-content-inset) text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         >
           <span
             className={cn(

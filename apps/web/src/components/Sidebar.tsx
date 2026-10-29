@@ -2101,7 +2101,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         });
   const sidebarSortingStrategy = createSidebarSortingStrategy({
     items: sidebarListItems,
-    enabled: !isContextDrag && projectFolders === null,
+    // Group sections are not sortable items, so the strategy would stack rows over them.
+    enabled: !isContextDrag && projectFolders === null && activeThreadGroups.length === 0,
     boundaryLabelHeight: SIDEBAR_DRAG_LABEL_HEIGHT,
     settledOrder: draggedSettledOrder,
     ...(draggedActiveOrder === undefined ? {} : { activeOrder: draggedActiveOrder }),
@@ -3388,13 +3389,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             sortableId={threadKey}
                             contextDrag={isContextDrag}
                             sortableDisabled={
-                              groupRow !== undefined ||
+                              (groupRow !== undefined && folderRow === undefined) ||
                               renamingThreadKey === threadKey ||
                               !draggableThreadKeys.has(threadKey) ||
                               optimisticDrop !== null
                             }
                             thread={thread}
                             variant={rowVariant}
+                            nested={folderRow !== undefined && groupRow !== undefined}
                             navigationParent={
                               groupRow ??
                               folderRow ??
@@ -3485,9 +3487,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           />
                         );
                       };
-                      // Boring folders only drop onto groups, so no section boundary shows.
+                      // Boring folders only drop onto groups, and without the strategy's row shuffle
+                      // the section boundary labels would overlap the group sections.
                       const from =
-                        isContextDrag || projectFolders !== null
+                        isContextDrag || projectFolders !== null || activeThreadGroups.length > 0
                           ? null
                           : (dragState?.activeSection ?? null);
                       const items: ReactNode[] = [
@@ -3517,14 +3520,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           />,
                         );
                         for (const thread of view.threads) {
-                          items.push(
-                            renderThreadRow(
-                              thread,
-                              "active",
-                              folderRow,
-                              variant === "section" ? groupRow : undefined,
-                            ),
-                          );
+                          items.push(renderThreadRow(thread, "active", folderRow, groupRow));
                         }
                       };
                       for (const item of sidebarListItems) {
