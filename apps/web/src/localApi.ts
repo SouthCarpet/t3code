@@ -2,6 +2,7 @@ import type { ConfirmDialogOptions, ContextMenuItem, LocalApi } from "@t3tools/c
 
 import { requestConfirmDialog } from "./confirmDialog";
 import { dismissContextMenu, showContextMenuFallback } from "./contextMenuFallback";
+import { withNativeMenuIcons } from "./contextMenuIconOverride";
 import { readBrowserClientSettings, writeBrowserClientSettings } from "./clientPersistenceStorage";
 
 let cachedApi: LocalApi | undefined;
@@ -45,7 +46,8 @@ export function createLocalApi(): LocalApi {
         position?: { x: number; y: number },
       ): Promise<T | null> => {
         if (window.desktopBridge) {
-          return window.desktopBridge.showContextMenu(items, position) as Promise<T | null>;
+          const nativeItems = await withNativeMenuIcons(items);
+          return window.desktopBridge.showContextMenu(nativeItems, position) as Promise<T | null>;
         }
         return showContextMenuFallback(items, position);
       },

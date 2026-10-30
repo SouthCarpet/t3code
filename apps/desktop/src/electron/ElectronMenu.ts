@@ -80,6 +80,9 @@ function normalizeContextMenuItems(source: readonly ContextMenuItem[]): ContextM
       disabled: sourceItem.disabled === true,
       ...(sourceItem.separatorBefore === true ? { separatorBefore: true } : {}),
       ...(typeof sourceItem.checked === "boolean" ? { checked: sourceItem.checked } : {}),
+      ...(typeof sourceItem.iconDataUrl === "string"
+        ? { iconDataUrl: sourceItem.iconDataUrl }
+        : {}),
     };
 
     if (sourceItem.children) {
@@ -95,6 +98,33 @@ function normalizeContextMenuItems(source: readonly ContextMenuItem[]): ContextM
 
   return normalizedItems;
 }
+
+const MENU_ICON_SIZE = 16;
+const MENU_ICON_DATA_URL_PREFIX = "data:image/png;base64,";
+const MENU_ICON_DATA_URL_MAX_LENGTH = 64 * 1024;
+
+// The renderer sends a small PNG (usually 2x); keep its pixels as a 16 px image of that scale.
+const menuIconFromDataUrl = (dataUrl: string): Option.Option<Electron.NativeImage> => {
+  if (
+    !dataUrl.startsWith(MENU_ICON_DATA_URL_PREFIX) ||
+    dataUrl.length > MENU_ICON_DATA_URL_MAX_LENGTH
+  ) {
+    return Option.none();
+  }
+  try {
+    const source = Electron.nativeImage.createFromDataURL(dataUrl);
+    const { width } = source.getSize();
+    if (source.isEmpty() || width < MENU_ICON_SIZE) {
+      return Option.none();
+    }
+    const icon = Electron.nativeImage.createFromBuffer(source.toPNG(), {
+      scaleFactor: width / MENU_ICON_SIZE,
+    });
+    return icon.isEmpty() ? Option.none() : Option.some(icon);
+  } catch {
+    return Option.none();
+  }
+};
 
 // popup() takes window points; renderer CSS coordinates must account for page zoom.
 const normalizePosition = (
@@ -136,6 +166,16 @@ export const make = Effect.gen(function* () {
     return destructiveMenuIconCache;
   };
 
+  const menuItemIcon = (item: ContextMenuItem): Option.Option<Electron.NativeImage> => {
+    const imageIcon =
+      item.iconDataUrl === undefined ? Option.none() : menuIconFromDataUrl(item.iconDataUrl);
+    if (Option.isSome(imageIcon)) {
+      return imageIcon;
+    }
+    const isLeaf = !item.children || item.children.length === 0;
+    return item.destructive && isLeaf ? getDestructiveMenuIcon() : Option.none();
+  };
+
   const buildTemplate = (
     entries: readonly ContextMenuItem[],
     complete: (selectedItemId: Option.Option<string>) => void,
@@ -173,11 +213,9 @@ export const make = Effect.gen(function* () {
       } else {
         itemOption.click = () => complete(Option.some(item.id));
       }
-      if (item.destructive && (!item.children || item.children.length === 0)) {
-        const destructiveIcon = getDestructiveMenuIcon();
-        if (Option.isSome(destructiveIcon)) {
-          itemOption.icon = destructiveIcon.value;
-        }
+      const icon = menuItemIcon(item);
+      if (Option.isSome(icon)) {
+        itemOption.icon = icon.value;
       }
 
       template.push(itemOption);
