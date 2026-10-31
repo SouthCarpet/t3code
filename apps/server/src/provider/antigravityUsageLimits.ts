@@ -106,7 +106,7 @@ function summaryResetTime(
   windowDurationMins: number | undefined,
   requestedAt: number,
 ): string | undefined {
-  // Untouched summary buckets report a rolling full-window reset (#22815).
+  // Untouched summary buckets report a rolling full-window reset.
   const untouched =
     bucket.remainingFraction === 1 &&
     bucket.description === undefined &&

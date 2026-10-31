@@ -134,7 +134,7 @@ const fixture = Effect.fn("AntigravityUsageTest.fixture")(function* (
 });
 
 describe("Antigravity subscription limits", () => {
-  // Oracle: #22815's 10:16 UTC payload and its narrow Workaround rule.
+  // Oracle: the 10:16 UTC payload and its narrow Workaround rule.
   it.effect("omits rolling resets for untouched summary buckets and keeps used Gemini resets", () =>
     Effect.gen(function* () {
       yield* TestClock.setTime(DateTime.toEpochMillis(DateTime.makeUnsafe("2026-10-21T10:16:04Z")));
@@ -197,7 +197,7 @@ describe("Antigravity subscription limits", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  // Oracle: #22815 measures the tolerance from the summary request, after auth.
+  // Oracle: measure the tolerance from the summary request, after auth.
   it.effect("uses summary request time after authentication for the reset tolerance", () =>
     Effect.gen(function* () {
       yield* TestClock.setTime(DateTime.toEpochMillis(DateTime.makeUnsafe("2026-10-21T10:16:02Z")));
@@ -218,7 +218,7 @@ describe("Antigravity subscription limits", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  // Oracle: #22815 keeps descriptions, measured resets, and spent buckets.
+  // Oracle: keep descriptions, measured resets, and spent buckets.
   it.effect("keeps summary resets with a description, a distant reset, or no quota left", () =>
     Effect.gen(function* () {
       yield* TestClock.setTime(DateTime.toEpochMillis(DateTime.makeUnsafe("2026-10-21T10:16:04Z")));
@@ -270,7 +270,7 @@ describe("Antigravity subscription limits", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  // Oracle: #22815's 60-second tolerance applies to both known window lengths.
+  // Oracle: the 60-second tolerance applies to both known window lengths.
   it.effect("omits summary resets 59 seconds away but keeps resets 61 seconds away", () =>
     Effect.gen(function* () {
       yield* TestClock.setTime(DateTime.toEpochMillis(DateTime.makeUnsafe("2026-10-21T10:16:04Z")));
@@ -327,7 +327,7 @@ describe("Antigravity subscription limits", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  // Oracle: the existing endpoint merge keeps the most-used reading (#22815).
+  // Oracle: the existing endpoint merge keeps the most-used reading.
   it.effect("keeps the used endpoint reading and its reset over an untouched reading", () =>
     Effect.gen(function* () {
       yield* TestClock.setTime(DateTime.toEpochMillis(DateTime.makeUnsafe("2026-10-21T10:16:04Z")));
@@ -388,7 +388,7 @@ describe("Antigravity subscription limits", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  // Oracle: model quotas have no evidence for #22815's summary-only rule.
+  // Oracle: model quotas have no evidence for the summary-only rule.
   it.effect("keeps full model fallback resets even at a full window from the request", () =>
     Effect.gen(function* () {
       yield* TestClock.setTime(DateTime.toEpochMillis(DateTime.makeUnsafe("2026-10-21T10:16:04Z")));
