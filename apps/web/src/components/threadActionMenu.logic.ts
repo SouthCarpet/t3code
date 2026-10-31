@@ -114,18 +114,19 @@ function buildGroupMenuItems(
   groups: ThreadActionMenuState["groups"],
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
   if (!groups) return [];
+  // No checkbox items: one checkbox makes the Windows native menu reserve an empty check column.
+  const targets = groups.options.filter((group) => group.id !== groups.currentGroupId);
   const addItem: ContextMenuItem<ThreadActionMenuId> = {
     id: "group-add",
     label: "Add to group",
     icon: "folder-plus",
     children: [
-      ...groups.options.map((group) => ({
+      ...targets.map((group) => ({
         id: `group-add:${group.id}` as const,
         label: group.name,
         ...(group.icon ? { iconOverride: group.icon } : {}),
-        checked: group.id === groups.currentGroupId,
       })),
-      { id: "group-new", label: "New group…", separatorBefore: groups.options.length > 0 },
+      { id: "group-new", label: "New group…", separatorBefore: targets.length > 0 },
     ],
   };
   return groups.currentGroupId === null

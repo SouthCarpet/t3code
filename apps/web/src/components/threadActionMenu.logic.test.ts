@@ -78,29 +78,43 @@ describe("buildThreadActionMenuItems", () => {
   });
 
   it.each([
-    [null, ["snooze", "group-add", "rename"]],
-    ["a", ["snooze", "group-add", "group-remove", "rename"]],
-  ] as const)("places group items after the lifecycle items (current %s)", (current, ids) => {
-    const items = buildThreadActionMenuItems({
-      ...baseState,
-      groups: {
-        options: [
-          { id: "a", name: "Alpha", icon: BAG },
-          { id: "b", name: "Beta", icon: null },
-        ],
-        currentGroupId: current,
-      },
-    });
-    const start = items.findIndex((item) => item.id === "snooze");
-    expect(items.slice(start, start + ids.length).map((item) => item.id)).toEqual(ids);
-    expect(
-      items
-        .find((item) => item.id === "group-add")
-        ?.children?.map((child) => [child.id, child.checked ?? false, child.iconOverride]),
-    ).toEqual([
-      ["group-add:a", current === "a", BAG],
-      ["group-add:b", false, undefined],
-      ["group-new", false, undefined],
-    ]);
-  });
+    [
+      null,
+      ["snooze", "group-add", "rename"],
+      [
+        ["group-add:a", undefined, BAG],
+        ["group-add:b", undefined, undefined],
+        ["group-new", undefined, undefined],
+      ],
+    ],
+    [
+      "a",
+      ["snooze", "group-add", "group-remove", "rename"],
+      [
+        ["group-add:b", undefined, undefined],
+        ["group-new", undefined, undefined],
+      ],
+    ],
+  ] as const)(
+    "places group items after the lifecycle items (current %s)",
+    (current, ids, children) => {
+      const items = buildThreadActionMenuItems({
+        ...baseState,
+        groups: {
+          options: [
+            { id: "a", name: "Alpha", icon: BAG },
+            { id: "b", name: "Beta", icon: null },
+          ],
+          currentGroupId: current,
+        },
+      });
+      const start = items.findIndex((item) => item.id === "snooze");
+      expect(items.slice(start, start + ids.length).map((item) => item.id)).toEqual(ids);
+      expect(
+        items
+          .find((item) => item.id === "group-add")
+          ?.children?.map((child) => [child.id, child.checked, child.iconOverride]),
+      ).toEqual(children);
+    },
+  );
 });
