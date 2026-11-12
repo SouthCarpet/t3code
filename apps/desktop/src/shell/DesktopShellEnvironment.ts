@@ -220,6 +220,7 @@ const logShellEnvironmentCommandError = (
 
 const captureWindowsEnvironmentCommand = (names: ReadonlyArray<string>) =>
   [
+    "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)",
     "$ErrorActionPreference = 'Stop'",
     ...names.flatMap((name) => {
       return [

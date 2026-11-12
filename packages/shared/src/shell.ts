@@ -261,6 +261,7 @@ export function buildEnvironmentCaptureCommand(
 
 function buildWindowsEnvironmentCaptureCommand(names: ReadonlyArray<string>): string {
   return [
+    "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)",
     "$ErrorActionPreference = 'Stop'",
     ...names.flatMap((name) => {
       if (!SHELL_ENV_NAME_PATTERN.test(name)) {

@@ -362,6 +362,35 @@ describe("readEnvironmentFromWindowsShell", () => {
     }),
   );
 
+  effectIt.live.runIf(HostProcess.Platform.defaultValue() === "win32")(
+    "captures non-ASCII PowerShell values when the console uses an OEM code page",
+    () =>
+      Effect.gen(function* () {
+        const environment = yield* readEnvironmentFromWindowsShell(
+          ["FNM_DIR"],
+          {},
+          (_file, args, options) =>
+            Effect.sync(() =>
+              Option.some(
+                NodeChildProcess.execFileSync(
+                  "powershell.exe",
+                  [
+                    ...args.slice(0, -1),
+                    `[Console]::OutputEncoding = [Text.Encoding]::GetEncoding(852); ${args.at(-1)}`,
+                  ],
+                  {
+                    ...options,
+                    windowsHide: true,
+                    env: { ...process.env, FNM_DIR: "C:\\Users\\Fučík\\fnm" },
+                  },
+                ),
+              ),
+            ),
+        );
+        expect(environment).toEqual({ FNM_DIR: "C:\\Users\\Fučík\\fnm" });
+      }),
+  );
+
   effectIt.effect("extracts environment variables from a PowerShell command", () =>
     Effect.gen(function* () {
       const execFile = vi.fn<
@@ -384,7 +413,13 @@ describe("readEnvironmentFromWindowsShell", () => {
       });
       expect(execFile).toHaveBeenCalledWith(
         "pwsh.exe",
-        expect.arrayContaining(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command"]),
+        [
+          "-NoLogo",
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $ErrorActionPreference = 'Stop'; Write-Output '__T3CODE_ENV_PATH_START__'; $value = [Environment]::GetEnvironmentVariable('PATH'); if ($null -ne $value -and $value.Length -gt 0) { Write-Output $value }; Write-Output '__T3CODE_ENV_PATH_END__'",
+        ],
         { encoding: "utf8", timeout: 5000 },
       );
     }),
