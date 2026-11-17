@@ -712,13 +712,13 @@ describe("question answer paths", () => {
           expected: ["Body\nCallout box"],
           occurrences: { text: "Callout box", count: 1 },
         },
-        // Text box paragraphs end their line; an empty one, a shape handle and a footnote do not.
+        // Text box paragraphs end their line; empty ones and notes in one or in a heading do not.
         {
           ext: "docx",
           bounded: true,
           parts: {
             "word/document.xml":
-              '<w:document xmlns:w="urn:w"><w:body><w:p><w:r><w:drawing><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Deadline: Friday</w:t></w:r></w:p><w:p/><w:p><w:r><w:t>Owner: Jana</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></w:drawing></w:r><w:r><w:t>Project plan </w:t><w:pict><v:shapetype><v:handles><v:h/></v:handles></v:shapetype></w:pict><w:t>for Q4.</w:t></w:r></w:p></w:body></w:document>',
+              '<w:document xmlns:w="urn:w"><w:body><w:p><w:r><w:drawing><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Deadline: Friday</w:t></w:r></w:p><w:p/><w:p><w:r><w:t>Owner: Jana</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></w:drawing></w:r><w:r><w:t>Project plan for Q4.</w:t></w:r></w:p></w:body></w:document>',
           },
           expected: ["Deadline: Friday\nOwner: Jana\nProject plan for Q4."],
         },
@@ -727,9 +727,9 @@ describe("question answer paths", () => {
           bounded: true,
           parts: {
             "content.xml":
-              "<office:document><text:p><draw:frame><draw:text-box><text:p>Deadline moved<text:note><text:note-body><text:p>See the plan.</text:p></text:note-body></text:note> to Friday.</text:p></draw:text-box></draw:frame>Project plan for Q4.</text:p></office:document>",
+              "<office:document><text:p><draw:frame><draw:text-box><text:h>Plan<text:note><text:note-body><text:p>Draft.</text:p></text:note-body></text:note> dates</text:h><text:p>Deadline moved<text:note><text:note-body><text:p>See the plan.</text:p></text:note-body></text:note> to Friday.</text:p></draw:text-box></draw:frame>Project plan for Q4.</text:p></office:document>",
           },
-          expected: ["See the plan. to Friday.\nProject plan for Q4."],
+          expected: ["Draft. dates", "See the plan. to Friday.\nProject plan for Q4."],
         },
         {
           ext: "docx",

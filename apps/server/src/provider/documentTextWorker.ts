@@ -140,8 +140,9 @@ function* all(node: XmlNode, name: string | readonly string[]): Generator<XmlNod
 }
 function* text(node: XmlNode, boxed = false): Generator<string, void> {
   if (HIDDEN.has(node.name)) return;
-  // Paragraphs of a text box sit inside its host paragraph; a note inside one stays inline.
-  const inBox = ["txbxContent", "text-box"].includes(node.name) || (boxed && node.name !== "p");
+  // Text box paragraphs sit in a host paragraph; notes in a box paragraph or heading stay inline.
+  const inBox =
+    ["txbxContent", "text-box"].includes(node.name) || (boxed && !["p", "h"].includes(node.name));
   if (["tab", "cell"].includes(node.name)) yield "\t";
   else if (["br", "line-break", "cr"].includes(node.name)) yield "\n";
   else if (node.name === "noBreakHyphen") yield "\u2011";
