@@ -3625,6 +3625,65 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     };
   });
 
+  const readReviewIndexPath = (cwd: string) =>
+    runGitStdout("GitVcsDriver.readUnifiedWorkingTreeReviewDiff.indexPath", cwd, [
+      "rev-parse",
+      "--git-path",
+      "index",
+    ]);
+
+  // Porcelain diff refreshes and rewrites the index it reads, taking index.lock, so it reads this copy.
+  const copyReviewIndex = Effect.fn("copyReviewIndex")(
+    function* (cwd: string, indexValue: string) {
+      const indexPath = path.isAbsolute(indexValue.trim())
+        ? indexValue.trim()
+        : path.resolve(cwd, indexValue.trim());
+      const tempIndexPath = yield* fileSystem.makeTempFileScoped({
+        prefix: `t3code-review-index-${process.pid}-`,
+      });
+      const indexExists = yield* fileSystem.exists(indexPath);
+      if (indexExists) {
+        const { mtime } = yield* fileSystem.stat(indexPath);
+        yield* fileSystem.copyFile(indexPath, tempIndexPath);
+        // stat truncates bigint times to ms; floor seconds to avoid making preceding-second files racy.
+        const indexTime = Option.isSome(mtime)
+          ? Math.max(0, Math.floor(mtime.value.getTime() / 1000))
+          : 0;
+        yield* fileSystem.utimes(tempIndexPath, indexTime, indexTime);
+      }
+      const env = { GIT_INDEX_FILE: tempIndexPath } satisfies NodeJS.ProcessEnv;
+      const tempIndexConfig = [
+        "-c",
+        "core.splitIndex=false",
+        "-c",
+        "splitIndex.sharedIndexExpire=never",
+      ];
+      if (!indexExists) {
+        yield* executeGit("GitVcsDriver.review.emptyIndex", cwd, ["read-tree", "--empty"], { env });
+      }
+      yield* executeGit(
+        "GitVcsDriver.readUnifiedWorkingTreeReviewDiff.expandSplitIndex",
+        cwd,
+        [...tempIndexConfig, "update-index", "--no-split-index"],
+        { env },
+      );
+      return { env, tempIndexConfig };
+    },
+    (effect, cwd) =>
+      Effect.catchTags(effect, {
+        PlatformError: (cause) =>
+          Effect.fail(
+            new GitCommandError({
+              operation: "GitVcsDriver.prepareReviewIndex",
+              cwd,
+              command: "git diff",
+              detail: "Could not prepare the review index.",
+              cause,
+            }),
+          ),
+      }),
+  );
+
   const prepareReviewIndex = Effect.fn("prepareReviewIndex")(function* (
     cwd: string,
     untrackedPaths: ReadonlyArray<string>,
@@ -3647,11 +3706,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           ],
           { allowNonZeroExit: true, maxOutputBytes: REVIEW_METADATA_MAX_OUTPUT_BYTES },
         ),
-        runGitStdout("GitVcsDriver.readUnifiedWorkingTreeReviewDiff.indexPath", cwd, [
-          "rev-parse",
-          "--git-path",
-          "index",
-        ]),
+        readReviewIndexPath(cwd),
       ],
       { concurrency: 2 },
     );
@@ -3693,38 +3748,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const omitted = pathsToAdd.length < candidates.length;
     if (pathsToAdd.length === 0 || (omitted && !allowPartial)) return { env: undefined, omitted };
 
-    const indexPath = path.isAbsolute(indexValue.trim())
-      ? indexValue.trim()
-      : path.resolve(cwd, indexValue.trim());
-    const tempIndexPath = yield* fileSystem.makeTempFileScoped({
-      prefix: `t3code-review-index-${process.pid}-`,
-    });
-    const indexExists = yield* fileSystem.exists(indexPath);
-    if (indexExists) {
-      const { mtime } = yield* fileSystem.stat(indexPath);
-      yield* fileSystem.copyFile(indexPath, tempIndexPath);
-      // stat truncates bigint times to ms; floor seconds to avoid making preceding-second files racy.
-      const indexTime = Option.isSome(mtime)
-        ? Math.max(0, Math.floor(mtime.value.getTime() / 1000))
-        : 0;
-      yield* fileSystem.utimes(tempIndexPath, indexTime, indexTime);
-    }
-    const env = { GIT_INDEX_FILE: tempIndexPath } satisfies NodeJS.ProcessEnv;
-    const tempIndexConfig = [
-      "-c",
-      "core.splitIndex=false",
-      "-c",
-      "splitIndex.sharedIndexExpire=never",
-    ];
-    if (!indexExists) {
-      yield* executeGit("GitVcsDriver.review.emptyIndex", cwd, ["read-tree", "--empty"], { env });
-    }
-    yield* executeGit(
-      "GitVcsDriver.readUnifiedWorkingTreeReviewDiff.expandSplitIndex",
-      cwd,
-      [...tempIndexConfig, "update-index", "--no-split-index"],
-      { env },
-    );
+    const { env, tempIndexConfig } = yield* copyReviewIndex(cwd, indexValue);
     yield* executeGit(
       "GitVcsDriver.readUnifiedWorkingTreeReviewDiff.addUntracked",
       cwd,
@@ -3783,20 +3807,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     if (paths.length === 0) return { env: undefined, omitted: false };
     if (paths.length > REVIEW_UNTRACKED_MAX_FILES)
       return { unavailable: "Too many untracked files to count." };
-    const index = yield* prepareReviewIndex(cwd, paths, allowPartial).pipe(
-      Effect.catchTags({
-        PlatformError: (cause) =>
-          Effect.fail(
-            new GitCommandError({
-              operation: "GitVcsDriver.prepareReviewIndex",
-              cwd,
-              command: "git diff",
-              detail: "Could not prepare the review index.",
-              cause,
-            }),
-          ),
-      }),
-    );
+    const index = yield* prepareReviewIndex(cwd, paths, allowPartial);
     if (index.omitted && !allowPartial)
       return { unavailable: "Untracked files are too large to count." };
     return index;
@@ -4297,15 +4308,17 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       // Untracked files left out make the file list partial, so the bounded patch is sent instead.
       const complete = untracked !== null && !untracked.omitted;
       const metadataOnly = input.metadataOnly === true && !input.file && complete;
+      const env =
+        untracked?.env ?? (yield* copyReviewIndex(cwd, yield* readReviewIndexPath(cwd))).env;
       const [dirty, base] =
         review.mergeBase === dirtyRef
-          ? yield* readTrackedDiff(dirtyRef, untracked?.env, metadataOnly).pipe(
+          ? yield* readTrackedDiff(dirtyRef, env, metadataOnly).pipe(
               Effect.map((result) => [result, result] as const),
             )
           : yield* Effect.all(
               [
-                readTrackedDiff(dirtyRef, untracked?.env, metadataOnly),
-                readTrackedDiff(review.mergeBase, untracked?.env, metadataOnly),
+                readTrackedDiff(dirtyRef, env, metadataOnly),
+                readTrackedDiff(review.mergeBase, env, metadataOnly),
               ],
               { concurrency: 2 },
             );

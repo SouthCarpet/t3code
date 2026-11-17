@@ -4804,7 +4804,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         }),
     );
 
-    it.effect("reads Changes totals without rewriting the real index for stat-dirty files", () =>
+    it.effect("reads totals and review diffs without writing the index for stat-dirty files", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();
         yield* initRepoWithCommit(cwd);
@@ -4823,6 +4823,11 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         assert.strictEqual(status.branchChanges?.insertions, 0);
         assert.strictEqual(status.branchChanges?.deletions, 0);
         // Writing the index takes index.lock, which makes concurrent user Git writes fail.
+        assert.deepStrictEqual(yield* fileSystem.readFile(indexPath), originalIndex);
+
+        const preview = yield* driver.getReviewDiffPreview({ cwd, sourceKind: "working-tree" });
+
+        assert.deepStrictEqual(preview.sources[0]!.files, []);
         assert.deepStrictEqual(yield* fileSystem.readFile(indexPath), originalIndex);
       }),
     );
