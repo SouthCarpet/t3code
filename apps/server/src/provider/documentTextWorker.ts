@@ -138,7 +138,7 @@ function* all(node: XmlNode, name: string | readonly string[]): Generator<XmlNod
     else yield* all(child, name);
   }
 }
-function* text(node: XmlNode): Generator<string, void> {
+function* text(node: XmlNode, nested = false): Generator<string, void> {
   if (HIDDEN.has(node.name)) return;
   if (["tab", "cell"].includes(node.name)) yield "\t";
   else if (["br", "line-break", "cr"].includes(node.name)) yield "\n";
@@ -149,8 +149,10 @@ function* text(node: XmlNode): Generator<string, void> {
   } else
     for (const child of node.children) {
       if (typeof child === "string") yield child;
-      else yield* text(child);
+      else yield* text(child, true);
     }
+  // A text box or frame holds whole paragraphs inside its host paragraph.
+  if (nested && ["p", "h"].includes(node.name)) yield "\n";
 }
 // SpreadsheetML `t` and `v` values are ST_Xstring: `_xHHHH_` is one UTF-16 code unit, and an
 // escaped lead underscore (`_x005F_xHHHH_`) keeps the literal `_xHHHH_`. Decoded in one pass.

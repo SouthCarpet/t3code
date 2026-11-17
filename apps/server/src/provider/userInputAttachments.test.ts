@@ -712,6 +712,16 @@ describe("question answer paths", () => {
           expected: ["Body\nCallout box"],
           occurrences: { text: "Callout box", count: 1 },
         },
+        // Paragraphs inside a text box end their line like top-level ones.
+        {
+          ext: "docx",
+          bounded: true,
+          parts: {
+            "word/document.xml":
+              '<w:document xmlns:w="urn:w"><w:body><w:p><w:r><w:drawing><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Deadline: Friday</w:t></w:r></w:p><w:p><w:r><w:t>Owner: Jana</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></w:drawing></w:r><w:r><w:t>Project plan for Q4.</w:t></w:r></w:p></w:body></w:document>',
+          },
+          expected: ["Deadline: Friday\nOwner: Jana\nProject plan for Q4."],
+        },
         {
           ext: "docx",
           bounded: true,
