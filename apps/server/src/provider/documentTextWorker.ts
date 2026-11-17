@@ -152,7 +152,7 @@ function* text(node: XmlNode, nested = false): Generator<string, void> {
       else yield* text(child, true);
     }
   // A text box or frame holds whole paragraphs inside its host paragraph.
-  if (nested && ["p", "h"].includes(node.name)) yield "\n";
+  if (nested && node.name === "p") yield "\n";
 }
 // SpreadsheetML `t` and `v` values are ST_Xstring: `_xHHHH_` is one UTF-16 code unit, and an
 // escaped lead underscore (`_x005F_xHHHH_`) keeps the literal `_xHHHH_`. Decoded in one pass.
