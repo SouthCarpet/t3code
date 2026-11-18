@@ -44,6 +44,7 @@ interface XmlNode {
   attrs: Record<string, string>;
   children: Array<XmlNode | string>;
   spaceCount?: number;
+  box?: boolean;
   hasText?: boolean;
   hasTextChoice?: boolean;
 }
@@ -80,6 +81,8 @@ function collapseOdfWhitespace(paragraph: XmlNode) {
 
 function xml(source: string, extension: string): XmlNode {
   const odf = [".odt", ".ods", ".odp"].includes(extension);
+  // Only DOCX and ODF have text boxes; the same element name in another format is not one.
+  const textBox = odf ? "text-box" : extension === ".docx" ? "txbxContent" : undefined;
   const root: XmlNode = { name: "root", attrs: {}, children: [] };
   const stack = [root];
   let nodes = 0;
@@ -98,6 +101,7 @@ function xml(source: string, extension: string): XmlNode {
       children: [],
     };
     if (odf && node.name === "s") node.spaceCount = repeatCount(node.attrs.c);
+    if (node.name === textBox) node.box = true;
     stack.at(-1)!.children.push(node);
     stack.push(node);
   });
@@ -141,8 +145,7 @@ function* all(node: XmlNode, name: string | readonly string[]): Generator<XmlNod
 function* text(node: XmlNode, boxed = false): Generator<string, void> {
   if (HIDDEN.has(node.name)) return;
   // Text box paragraphs sit in a host paragraph; notes in a box paragraph or heading stay inline.
-  const inBox =
-    ["txbxContent", "text-box"].includes(node.name) || (boxed && !["p", "h"].includes(node.name));
+  const inBox = node.box || (boxed && !["p", "h"].includes(node.name));
   if (["tab", "cell"].includes(node.name)) yield "\t";
   else if (["br", "line-break", "cr"].includes(node.name)) yield "\n";
   else if (node.name === "noBreakHyphen") yield "\u2011";
