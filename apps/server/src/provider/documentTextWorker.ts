@@ -144,8 +144,6 @@ function* all(node: XmlNode, name: string | readonly string[]): Generator<XmlNod
 }
 function* text(node: XmlNode, boxed = false): Generator<string, void> {
   if (HIDDEN.has(node.name)) return;
-  // Text box paragraphs sit in a host paragraph; notes in a box paragraph or heading stay inline.
-  const inBox = node.box || (boxed && !["p", "h"].includes(node.name));
   if (["tab", "cell"].includes(node.name)) yield "\t";
   else if (["br", "line-break", "cr"].includes(node.name)) yield "\n";
   else if (node.name === "noBreakHyphen") yield "\u2011";
@@ -155,8 +153,9 @@ function* text(node: XmlNode, boxed = false): Generator<string, void> {
   } else
     for (const child of node.children) {
       if (typeof child === "string") yield child;
-      else yield* text(child, inBox);
+      else yield* text(child, node.box || (boxed && !["p", "h"].includes(node.name)));
     }
+  // Text box paragraphs sit in a host paragraph; notes in a box paragraph or heading stay inline.
   if (boxed && node.name === "p" && node.hasText) yield "\n";
 }
 // SpreadsheetML `t` and `v` values are ST_Xstring: `_xHHHH_` is one UTF-16 code unit, and an
